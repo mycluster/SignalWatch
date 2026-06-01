@@ -42,6 +42,65 @@ The project is designed to demonstrate:
 
 ---
 
+## Local Development
+
+Create a virtual environment and install the project with development tools:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+For a requirements-file based setup, use:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+Docker Compose requires Docker Desktop or another Docker Engine installation available on your PATH.
+
+Run the FastAPI app:
+
+```powershell
+uvicorn signalwatch.main:app --reload
+```
+
+Start PostgreSQL:
+
+```powershell
+docker compose up -d postgres
+```
+
+The default local database connection is:
+
+```text
+postgresql://signalwatch:signalwatch@localhost:5432/signalwatch
+```
+
+Verify the service:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/health
+```
+
+Run tests and linting:
+
+```powershell
+pytest
+ruff check .
+```
+
+Stop local containers:
+
+```powershell
+docker compose down
+```
+
+---
+
 ## Use Case
 
 The initial use case is supply-chain disruption monitoring.
