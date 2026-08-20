@@ -1,0 +1,191 @@
+Milestone 06a Evidence - Manual Azure ETL Container Job
+Captured: 2026-08-20
+
+Azure resources
+---------------
+Container Apps Job: job-signalwatch-etl-dev
+Resource group: rg-signalwatch-dev
+Location: Central US
+Image: acrsignalwatchdev.azurecr.io/signalwatch-etl:dev
+Managed environment: managedEnvironment-rgsignalwatchde-b8d3
+Log Analytics workspace customer ID: 0993d030-87de-45fa-89a7-8ae6fec1751c
+
+Relevant job settings
+---------------------
+STORAGE_BACKEND=azure
+AZURE_STORAGE_CONTAINER_NAME=signalwatch
+AZURE_STORAGE_ACCOUNT_NAME=stsignalwatchdev1
+AZURE_STORAGE_ACCOUNT_URL=https://stsignalwatchdev1.dfs.core.windows.net
+DATABASE_URL=postgresql://signalwatch:signalwatch@localhost:5432/signalwatch
+ENABLE_DATABASE_WRITES=false
+
+Identity and storage access
+---------------------------
+System-assigned managed identity principal ID:
+c4baec1d-4535-4546-acbd-3f01f37f64be
+
+Storage account scope:
+/subscriptions/2a60a74e-98e0-42dc-ab4a-525dc34885d0/resourceGroups/rg-signalwatch-dev/providers/Microsoft.Storage/storageAccounts/stsignalwatchdev1
+
+Assigned roles:
+- Storage Blob Data Contributor
+- Storage Blob Data Owner
+
+Resource sizing used for successful ETL execution
+-------------------------------------------------
+cpu: 1.0
+memory: 2Gi
+
+Earlier diagnostic failures
+---------------------------
+Execution: job-signalwatch-etl-dev-so5tazz
+Status: Failed
+Failure cause:
+Error: connection is bad: connection to server at "::1", port 5432 failed: Cannot assign requested address
+- host: 'localhost', port: '5432', hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 5432 failed: Connection refused
+Pipeline: gdelt_run_all
+Status: failure
+Storage backend: azure
+
+Resolution:
+Added ENABLE_DATABASE_WRITES=false and changed ETL to skip Postgres service creation, schema checks, checkpoint writes, and event upserts when database writes are disabled.
+
+Execution: job-signalwatch-etl-dev-dw46afn
+Status: Failed
+Failure cause:
+Pipeline: gdelt_run_all
+Status: failure
+Storage backend: azure
+Database writes: disabled
+Error: (AuthorizationPermissionMismatch) This request is not authorized to perform this operation using this permission.
+Code: AuthorizationPermissionMismatch
+Message: This request is not authorized to perform this operation using this permission.
+
+Resolution:
+Assigned system-managed identity to the Container Apps Job and granted ADLS data roles on the storage account.
+
+Execution: job-signalwatch-etl-dev-4bzr195
+Status: Failed
+Failure cause:
+Container 'job-signalwatch-etl-dev' was terminated with exit code '137' and reason 'ProcessExited'
+Console log:
+Killed
+
+Resolution:
+Increased Container Apps Job resources from 0.25 CPU / 0.5Gi memory to 1.0 CPU / 2Gi memory.
+
+Successful real ETL execution
+-----------------------------
+Execution: job-signalwatch-etl-dev-3hwa3gb
+Start: 2026-08-20T08:45:40+00:00
+End: 2026-08-20T08:46:30+00:00
+Status: Succeeded
+
+System logs:
+Replica 'job-signalwatch-etl-dev-3hwa3gb-nb59h' for Job Execution 'job-signalwatch-etl-dev-3hwa3gb' has been scheduled to run on a node.
+Successfully created pod for Job Execution 'job-signalwatch-etl-dev-3hwa3gb'
+Pulling image 'acrsignalwatchdev.azurecr.io/signalwatch-etl:dev'
+Successfully pulled image "acrsignalwatchdev.azurecr.io/signalwatch-etl:dev" in 2.88s. Image size: 85983232 bytes.
+Created container 'job-signalwatch-etl-dev'
+Started container 'job-signalwatch-etl-dev'
+Container 'job-signalwatch-etl-dev' was terminated with exit code '0' and reason 'ProcessExited'
+Execution 'job-signalwatch-etl-dev-3hwa3gb' for Job 'job-signalwatch-etl-dev' has successfully completed
+
+Console logs:
+Pipeline: gdelt_run_all
+Status: success
+Storage backend: azure
+Database writes: disabled
+Bronze path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/bronze/gdelt/events/year=2026/month=08/day=19/hour=00/20260819.export.CSV.zip
+Silver path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/silver/normalized_events/year=2026/month=08/day=19/normalized-events-20260819.jsonl
+Records read: 110686
+Records normalized: 110686
+Records written to Postgres: skipped
+Records written to ADLS silver: 110686
+
+Fresh real ETL validation after smoke test
+------------------------------------------
+Execution: job-signalwatch-etl-dev-tf82rbf
+Start: 2026-08-20T08:54:47+00:00
+End: 2026-08-20T08:55:27+00:00
+Status: Succeeded
+
+System logs:
+Successfully created pod for Job Execution 'job-signalwatch-etl-dev-tf82rbf'
+Replica 'job-signalwatch-etl-dev-tf82rbf-vmq7v' for Job Execution 'job-signalwatch-etl-dev-tf82rbf' has been scheduled to run on a node.
+Pulling image 'acrsignalwatchdev.azurecr.io/signalwatch-etl:dev'
+Successfully pulled image "acrsignalwatchdev.azurecr.io/signalwatch-etl:dev" in 3.23s. Image size: 85983232 bytes.
+Created container 'job-signalwatch-etl-dev'
+Started container 'job-signalwatch-etl-dev'
+Container 'job-signalwatch-etl-dev' was terminated with exit code '0' and reason 'ProcessExited'
+Execution 'job-signalwatch-etl-dev-tf82rbf' for Job 'job-signalwatch-etl-dev' has successfully completed
+
+Console logs:
+Pipeline: gdelt_run_all
+Status: success
+Storage backend: azure
+Database writes: disabled
+Bronze path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/bronze/gdelt/events/year=2026/month=08/day=19/hour=00/20260819.export.CSV.zip
+Silver path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/silver/normalized_events/year=2026/month=08/day=19/normalized-events-20260819.jsonl
+Records read: 110686
+Records normalized: 110686
+Records written to Postgres: skipped
+Records written to ADLS silver: 110686
+
+ADLS file existence checks:
+az storage fs file show --account-name stsignalwatchdev1 --file-system signalwatch --path "bronze/gdelt/events/year=2026/month=08/day=19/hour=00/20260819.export.CSV.zip" --auth-mode login
+Result: bronze/gdelt/events/year=2026/month=08/day=19/hour=00/20260819.export.CSV.zip exists.
+
+az storage fs file show --account-name stsignalwatchdev1 --file-system signalwatch --path "silver/normalized_events/year=2026/month=08/day=19/normalized-events-20260819.jsonl" --auth-mode login
+Result: silver/normalized_events/year=2026/month=08/day=19/normalized-events-20260819.jsonl exists.
+
+Successful ADLS smoke execution
+-------------------------------
+Execution: job-signalwatch-etl-dev-zpqy7qi
+Start: 2026-08-20T08:51:20+00:00
+End: 2026-08-20T08:51:51+00:00
+Status: Succeeded
+
+System logs:
+Replica 'job-signalwatch-etl-dev-zpqy7qi-tw75r' for Job Execution 'job-signalwatch-etl-dev-zpqy7qi' has been scheduled to run on a node.
+Successfully created pod for Job Execution 'job-signalwatch-etl-dev-zpqy7qi'
+Successfully pulled image "acrsignalwatchdev.azurecr.io/signalwatch-etl:dev" in 2.72s. Image size: 85983232 bytes.
+Created container 'job-signalwatch-etl-dev'
+Started container 'job-signalwatch-etl-dev'
+Container 'job-signalwatch-etl-dev' was terminated with exit code '0' and reason 'ProcessExited'
+Execution 'job-signalwatch-etl-dev-zpqy7qi' for Job 'job-signalwatch-etl-dev' has successfully completed
+
+Console logs:
+Pipeline: adls_smoke_test
+Status: success
+Storage backend: azure
+Database writes: disabled
+Bronze smoke path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/bronze/_smoke_tests/job_execution=job-signalwatch-etl-dev-zpqy7qi/bronze-test.txt
+Silver smoke path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/silver/_smoke_tests/job_execution=job-signalwatch-etl-dev-zpqy7qi/silver-test.jsonl
+
+Validation commands
+-------------------
+Container job execution list:
+az containerapp job execution list --name job-signalwatch-etl-dev --resource-group rg-signalwatch-dev -o table
+
+Execution details:
+az containerapp job execution show --name job-signalwatch-etl-dev --resource-group rg-signalwatch-dev --job-execution-name job-signalwatch-etl-dev-3hwa3gb -o table
+
+Log Analytics query:
+az monitor log-analytics query -w 0993d030-87de-45fa-89a7-8ae6fec1751c --analytics-query "union isfuzzy=true ContainerAppConsoleLogs_CL, ContainerAppSystemLogs_CL | where TimeGenerated between (datetime(2026-08-20T08:45:35Z) .. datetime(2026-08-20T08:46:40Z)) | where ExecutionName_s == 'job-signalwatch-etl-dev-3hwa3gb' or ContainerJobName_s == 'job-signalwatch-etl-dev' or JobName_s == 'job-signalwatch-etl-dev' | project TimeGenerated, Type, Level, ExecutionName_s, ReplicaName_s, Reason_s, Log_s | order by TimeGenerated asc | take 200" -o table
+
+Smoke run:
+az containerapp job update --name job-signalwatch-etl-dev --resource-group rg-signalwatch-dev --set-env-vars ETL_COMMAND=smoke-adls
+az containerapp job start --name job-signalwatch-etl-dev --resource-group rg-signalwatch-dev
+az containerapp job update --name job-signalwatch-etl-dev --resource-group rg-signalwatch-dev --remove-env-vars ETL_COMMAND
+
+Final result
+------------
+The manual Azure ETL Container Apps Job milestone is complete:
+- container starts
+- image pulls from ACR
+- ADLS authentication works through managed identity
+- bronze write succeeds
+- silver write succeeds
+- database writes are skipped for this milestone
+- job exits successfully

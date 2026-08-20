@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 from uuid import UUID, uuid4
@@ -10,6 +11,15 @@ from uuid import UUID, uuid4
 import psycopg
 
 from signalwatch.core.config import settings
+
+
+class PipelineRunStatus(str, Enum):
+    """Pipeline run status values stored after a run starts."""
+
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILURE = "failure"
+    SKIPPED = "skipped"
 
 
 class CheckpointService:
@@ -47,7 +57,7 @@ class CheckpointService:
 					INSERT INTO pipeline_runs (
 						id, pipeline_name, source_system,
 						source_window_start, source_window_end, status
-					) VALUES (%s, %s, %s, %s, %s, 'running')
+					) VALUES (%s, %s, %s, %s, %s, %s)
 					""",
                     (
                         run_id,
@@ -55,6 +65,7 @@ class CheckpointService:
                         source_system,
                         source_window_start,
                         source_window_end,
+                        PipelineRunStatus.RUNNING.value,
                     ),
                 )
         return run_id
@@ -78,7 +89,7 @@ class CheckpointService:
                 cursor.execute(
                     """
 					UPDATE pipeline_runs
-					SET status = 'success', finished_at = NOW(), source_url = %s,
+					SET status = %s, finished_at = NOW(), source_url = %s,
 						raw_output_path = %s, normalized_output_path = %s,
 						storage_backend = %s, file_size_bytes = %s,
 						records_read = %s, records_written = %s, records_failed = %s,
@@ -86,6 +97,7 @@ class CheckpointService:
 					WHERE id = %s
 					""",
                     (
+                        PipelineRunStatus.SUCCESS.value,
                         source_url,
                         raw_output_path,
                         normalized_output_path,
@@ -114,15 +126,34 @@ class CheckpointService:
                 cursor.execute(
                     """
 					UPDATE pipeline_runs
-					SET status = 'failed', finished_at = NOW(), error_message = %s,
+					SET status = %s, finished_at = NOW(), error_message = %s,
 						records_read = %s, records_written = %s, records_failed = %s
 					WHERE id = %s
 					""",
                     (
+                        PipelineRunStatus.FAILURE.value,
                         error_message[:4000],
                         records_read,
                         records_written,
                         records_failed,
+                        run_id,
+                    ),
+                )
+                self._require_updated_row(cursor.rowcount, run_id)
+
+    def mark_skipped(self, run_id: UUID, reason: str) -> None:
+        """Mark a run skipped without advancing the successful checkpoint."""
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+					UPDATE pipeline_runs
+					SET status = %s, finished_at = NOW(), error_message = %s
+					WHERE id = %s
+					""",
+                    (
+                        PipelineRunStatus.SKIPPED.value,
+                        reason[:4000],
                         run_id,
                     ),
                 )

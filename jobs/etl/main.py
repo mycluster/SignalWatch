@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict
 from datetime import timedelta
@@ -28,6 +29,9 @@ RUN_ALL_PIPELINE_NAME = "gdelt_run_all"
 SOURCE_SYSTEM = "GDELT"
 RAW_ROOT = Path("bronze/gdelt/events")
 SILVER_ROOT = Path("silver/normalized_events")
+SKIPPED_WINDOW_REASON = "source window is already covered by a successful run"
+SMOKE_PIPELINE_NAME = "adls_smoke_test"
+SMOKE_EXECUTION_ENV_VAR = "CONTAINER_APP_JOB_EXECUTION_NAME"
 
 
 def ingest(
@@ -61,7 +65,12 @@ def ingest(
             SOURCE_SYSTEM,
             raw_output_path_prefix,
         ):
-            raise RuntimeError("source window is already covered by a successful run")
+            checkpoint_service.mark_skipped(run_id, SKIPPED_WINDOW_REASON)
+            print(f"Pipeline: {PIPELINE_NAME}")
+            print(f"Window: {window_start.isoformat().replace('+00:00', 'Z')}")
+            print("Status: skipped")
+            print(f"Reason: {SKIPPED_WINDOW_REASON}")
+            return 0
 
         with TemporaryDirectory() as temporary_directory:
             download = client.download_events(requested_window, temporary_directory)
@@ -190,6 +199,8 @@ def run_all(
     requested_window: str,
     storage_backend: str | None = None,
     database_url: str | None = None,
+    enable_database_writes: bool | None = None,
+    force: bool = False,
     client: GDELTClient | None = None,
     checkpoint_service: CheckpointService | None = None,
     raw_writer: RawStorageWriter | None = None,
@@ -198,11 +209,20 @@ def run_all(
 ) -> int:
     """Download, bronze-write, normalize, persist, silver-write, and checkpoint one window."""
     backend = (storage_backend or settings.storage_backend).lower()
+    database_writes_enabled = (
+        settings.enable_database_writes
+        if enable_database_writes is None
+        else enable_database_writes
+    )
     client = client or GDELTClient()
-    checkpoint_service = checkpoint_service or CheckpointService(database_url)
     raw_writer = raw_writer or build_raw_writer(backend)
     silver_writer = silver_writer or build_raw_writer(backend)
-    event_writer = event_writer or NormalizedEventWriter(database_url)
+    if database_writes_enabled:
+        checkpoint_service = checkpoint_service or CheckpointService(database_url)
+        event_writer = event_writer or NormalizedEventWriter(database_url)
+    else:
+        checkpoint_service = None
+        event_writer = None
     run_id = None
     window_start = None
     records_read = 0
@@ -214,24 +234,32 @@ def run_all(
     silver_path = None
 
     try:
-        checkpoint_service.ensure_schema()
-        event_writer.ensure_schema()
+        if database_writes_enabled and checkpoint_service and event_writer:
+            checkpoint_service.ensure_schema()
+            event_writer.ensure_schema()
         window_start = client.resolve_timestamp(requested_window)
         window_duration = (
             timedelta(days=1) if _is_daily_window(requested_window) else timedelta(minutes=15)
         )
         window_end = window_start + window_duration
-        run_id = checkpoint_service.start_run(
-            RUN_ALL_PIPELINE_NAME, SOURCE_SYSTEM, window_start, window_end
-        )
-        raw_output_path_prefix = _raw_output_path_prefix(raw_writer)
-        if not checkpoint_service.can_process_window(
-            window_start,
-            RUN_ALL_PIPELINE_NAME,
-            SOURCE_SYSTEM,
-            raw_output_path_prefix,
-        ):
-            raise RuntimeError("source window is already covered by a successful run")
+        if database_writes_enabled and checkpoint_service:
+            run_id = checkpoint_service.start_run(
+                RUN_ALL_PIPELINE_NAME, SOURCE_SYSTEM, window_start, window_end
+            )
+            raw_output_path_prefix = _raw_output_path_prefix(raw_writer)
+            if not force and not checkpoint_service.can_process_window(
+                window_start,
+                RUN_ALL_PIPELINE_NAME,
+                SOURCE_SYSTEM,
+                raw_output_path_prefix,
+            ):
+                checkpoint_service.mark_skipped(run_id, SKIPPED_WINDOW_REASON)
+                print(f"Pipeline: {RUN_ALL_PIPELINE_NAME}")
+                print("Status: skipped")
+                print(f"Storage backend: {backend}")
+                print("Database writes: enabled")
+                print(f"Reason: {SKIPPED_WINDOW_REASON}")
+                return 0
 
         with TemporaryDirectory() as temporary_directory:
             download = client.download_events(requested_window, temporary_directory)
@@ -262,10 +290,11 @@ def run_all(
 
             unique_events = deduplicate_events(normalized_events)
             records_normalized = len(unique_events)
-            records_written_to_postgres = event_writer.upsert_events(
-                unique_events,
-                pipeline_run_id=run_id,
-            )
+            if database_writes_enabled and event_writer:
+                records_written_to_postgres = event_writer.upsert_events(
+                    unique_events,
+                    pipeline_run_id=run_id,
+                )
             silver_destination = _silver_path(window_start, source_timestamp)
             silver_path = silver_writer.write(
                 _events_to_jsonl(unique_events),
@@ -273,20 +302,21 @@ def run_all(
             )
             records_written_to_silver = len(unique_events)
 
-        checkpoint_service.mark_success(
-            run_id,
-            source_url=download.source_url,
-            raw_output_path=bronze_path,
-            normalized_output_path=silver_path,
-            storage_backend=backend,
-            file_size_bytes=download.file_size,
-            records_read=records_read,
-            records_written=records_written_to_postgres,
-            records_failed=records_failed,
-            error_message="; ".join(row_errors) if row_errors else None,
-        )
+        if database_writes_enabled and checkpoint_service and run_id:
+            checkpoint_service.mark_success(
+                run_id,
+                source_url=download.source_url,
+                raw_output_path=bronze_path,
+                normalized_output_path=silver_path,
+                storage_backend=backend,
+                file_size_bytes=download.file_size,
+                records_read=records_read,
+                records_written=records_written_to_postgres,
+                records_failed=records_failed,
+                error_message="; ".join(row_errors) if row_errors else None,
+            )
     except Exception as error:
-        if run_id is not None:
+        if database_writes_enabled and checkpoint_service and run_id is not None:
             checkpoint_service.mark_failure(
                 run_id,
                 str(error),
@@ -297,6 +327,7 @@ def run_all(
         print(f"Pipeline: {RUN_ALL_PIPELINE_NAME}")
         print("Status: failure")
         print(f"Storage backend: {backend}")
+        print(f"Database writes: {_enabled_text(database_writes_enabled)}")
         if bronze_path:
             print(f"Bronze path: {bronze_path}")
         if silver_path:
@@ -307,17 +338,77 @@ def run_all(
     print(f"Pipeline: {RUN_ALL_PIPELINE_NAME}")
     print("Status: success")
     print(f"Storage backend: {backend}")
+    print(f"Database writes: {_enabled_text(database_writes_enabled)}")
     print(f"Bronze path: {bronze_path}")
     print(f"Silver path: {silver_path}")
     print(f"Records read: {records_read}")
     print(f"Records normalized: {records_normalized}")
-    print(f"Records written to Postgres: {records_written_to_postgres}")
+    if database_writes_enabled:
+        print(f"Records written to Postgres: {records_written_to_postgres}")
+    else:
+        print("Records written to Postgres: skipped")
     print(f"Records written to ADLS silver: {records_written_to_silver}")
+    return 0
+
+
+def smoke_adls(
+    storage_backend: str | None = None,
+    raw_writer: RawStorageWriter | None = None,
+    silver_writer: RawStorageWriter | None = None,
+) -> int:
+    """Write tiny unique bronze and silver smoke files to the configured storage backend."""
+    backend = (storage_backend or settings.storage_backend).lower()
+    raw_writer = raw_writer or build_raw_writer(backend)
+    silver_writer = silver_writer or build_raw_writer(backend)
+    execution_name = _job_execution_name()
+    bronze_destination = Path(
+        f"bronze/_smoke_tests/job_execution={execution_name}/bronze-test.txt"
+    )
+    silver_destination = Path(
+        f"silver/_smoke_tests/job_execution={execution_name}/silver-test.jsonl"
+    )
+
+    try:
+        bronze_path = raw_writer.write(
+            f"SignalWatch ADLS smoke test: {execution_name}\n".encode(),
+            bronze_destination.as_posix(),
+        )
+        silver_path = silver_writer.write(
+            json.dumps({"status": "ok", "job_execution": execution_name}).encode("utf-8")
+            + b"\n",
+            silver_destination.as_posix(),
+        )
+    except Exception as error:
+        print(f"Pipeline: {SMOKE_PIPELINE_NAME}")
+        print("Status: failure")
+        print(f"Storage backend: {backend}")
+        print("Database writes: disabled")
+        print(f"Error: {error}")
+        return 1
+
+    print(f"Pipeline: {SMOKE_PIPELINE_NAME}")
+    print("Status: success")
+    print(f"Storage backend: {backend}")
+    print("Database writes: disabled")
+    print(f"Bronze smoke path: {_display_path(bronze_path)}")
+    print(f"Silver smoke path: {_display_path(silver_path)}")
     return 0
 
 
 def _is_daily_window(requested_window: str) -> bool:
     return requested_window.lower() == "latest" or len(requested_window) == 8
+
+
+def _enabled_text(enabled: bool) -> str:
+    return "enabled" if enabled else "disabled"
+
+
+def _job_execution_name() -> str:
+    return os.environ.get(SMOKE_EXECUTION_ENV_VAR) or "local"
+
+
+def _display_path(path: str) -> str:
+    return path.replace("\\", "/")
 
 
 def _bronze_path(window_start, filename: str) -> Path:
@@ -396,6 +487,21 @@ def build_parser() -> argparse.ArgumentParser:
     run_all_parser.add_argument("--timestamp", help="GDELT timestamp, e.g. 20260819231500")
     run_all_parser.add_argument("--storage", choices=("local", "azure"), help="Storage backend")
     run_all_parser.add_argument("--database-url", help="Postgres connection URL")
+    run_all_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass checkpoint protection for manual testing",
+    )
+    run_all_parser.add_argument(
+        "--ignore-checkpoint",
+        action="store_true",
+        help="Alias for --force",
+    )
+
+    smoke_parser = subparsers.add_parser(
+        "smoke-adls", help="Write tiny unique bronze and silver smoke files"
+    )
+    smoke_parser.add_argument("--storage", choices=("local", "azure"), help="Storage backend")
 
     normalize_parser = subparsers.add_parser(
         "normalize", help="Normalize one raw GDELT Events file"
@@ -415,7 +521,14 @@ def main(argv: list[str] | None = None) -> int:
         return ingest(requested_window, args.storage, args.database_url)
     if args.command == "run-all":
         requested_window = args.timestamp or args.window
-        return run_all(requested_window, args.storage, args.database_url)
+        return run_all(
+            requested_window,
+            args.storage,
+            args.database_url,
+            force=args.force or args.ignore_checkpoint,
+        )
+    if args.command == "smoke-adls":
+        return smoke_adls(args.storage)
     if args.command == "normalize":
         return normalize(args.raw_file, args.database_url)
     return 2

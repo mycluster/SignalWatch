@@ -192,6 +192,36 @@ Database verification output:
 Summary: GDELT file downloaded, raw zip written to ADLS bronze, rows parsed and normalized, normalized rows persisted to Postgres, normalized JSONL written to ADLS silver, and pipeline_runs populated with raw_output_path, normalized_output_path, and storage_backend.
 
 
+## MILESTONE 6 -- ETL worker container ##
+
+Dockerfile:
+jobs/etl/Dockerfile
+
+Build command:
+docker build -f jobs/etl/Dockerfile -t signalwatch-etl:test .
+
+Default container command:
+python -m jobs.etl.main run-all --window latest --storage azure
+
+Run default end-to-end worker:
+docker run --rm --env-file .env signalwatch-etl:test
+
+Run ingest only:
+docker run --rm --env-file .env -e ETL_COMMAND=ingest -e ETL_WINDOW=latest -e STORAGE_BACKEND=azure signalwatch-etl:test
+
+Run normalize only:
+docker run --rm --env-file .env -e ETL_COMMAND=normalize -e RAW_FILE=bronze/gdelt/events/year=2026/month=08/day=19/hour=00/20260819.export.CSV.zip signalwatch-etl:test
+
+Run a specific GDELT timestamp:
+docker run --rm --env-file .env -e ETL_COMMAND=run-all -e ETL_TIMESTAMP=20260819000000 -e STORAGE_BACKEND=azure signalwatch-etl:test
+
+Validation:
+Local Docker build was not executed because Docker is not installed/on PATH in this environment.
+The ETL CLI modes were validated locally:
+.\.venv\Scripts\python.exe -m jobs.etl.main --help
+.\.venv\Scripts\python.exe -m jobs.etl.main run-all --help
+
+
 Pipeline: gdelt_run_all
 Status: success
 Storage backend: azure

@@ -68,8 +68,10 @@ class PipelineService:
 
 
 def _health_status(latest_run: dict[str, Any]) -> str:
-    if latest_run["status"] != "success":
+    if latest_run["status"] == "failure":
         return "unhealthy"
     if latest_run["records_failed"]:
         return "degraded"
-    return "healthy"
+    if latest_run["status"] in {"success", "skipped"}:
+        return "healthy"
+    return "unknown"

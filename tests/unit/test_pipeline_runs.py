@@ -7,7 +7,7 @@ from zipfile import ZipFile
 
 from jobs.etl.ingest.checkpoint_service import CheckpointService
 from jobs.etl.ingest.gdelt_client import DownloadMetadata
-from jobs.etl.main import ingest, main, run_all
+from jobs.etl.main import ingest, main, run_all, smoke_adls
 from jobs.etl.transform.parse_gdelt_events import GDELT_EVENT_FIELDS
 
 
@@ -111,6 +111,9 @@ class FakeCheckpoint:
         self.events.append("failure")
         self.failure_kwargs = kwargs
 
+    def mark_skipped(self, *args, **kwargs):
+        self.events.append("skipped")
+
 
 class FakeWriter:
     def __init__(self) -> None:
@@ -161,6 +164,27 @@ def test_ingest_marks_success_only_after_raw_write(tmp_path, monkeypatch, capsys
     assert "Records failed: 0" in output
 
 
+def test_ingest_marks_duplicate_window_skipped(tmp_path, monkeypatch, capsys) -> None:
+    checkpoint = FakeCheckpoint()
+    checkpoint.can_process_window = lambda *args: False
+    writer = FakeWriter()
+    monkeypatch.setattr("jobs.etl.main.RAW_ROOT", tmp_path / "data/raw/gdelt/events")
+
+    result = ingest(
+        "latest",
+        client=FakeClient(),
+        checkpoint_service=checkpoint,
+        raw_writer=writer,
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert checkpoint.events == ["start", "skipped"]
+    assert writer.writes == []
+    assert "Status: skipped" in output
+    assert "Reason: source window is already covered by a successful run" in output
+
+
 def test_run_all_writes_bronze_postgres_silver_and_checkpoint(
     tmp_path, monkeypatch, capsys
 ) -> None:
@@ -197,6 +221,129 @@ def test_run_all_writes_bronze_postgres_silver_and_checkpoint(
     assert "Pipeline: gdelt_run_all" in output
     assert "Records written to Postgres: 1" in output
     assert "Records written to ADLS silver: 1" in output
+
+
+def test_run_all_marks_duplicate_window_skipped(tmp_path, monkeypatch, capsys) -> None:
+    checkpoint = FakeCheckpoint()
+    checkpoint.can_process_window = lambda *args: False
+    writer = FakeWriter()
+    event_writer = FakeEventWriter()
+    monkeypatch.setattr("jobs.etl.main.RAW_ROOT", tmp_path / "bronze/gdelt/events")
+    monkeypatch.setattr("jobs.etl.main.SILVER_ROOT", tmp_path / "silver/normalized_events")
+
+    result = run_all(
+        "latest",
+        storage_backend="local",
+        client=FakeClient(),
+        checkpoint_service=checkpoint,
+        raw_writer=writer,
+        silver_writer=writer,
+        event_writer=event_writer,
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert checkpoint.events == ["ensure_checkpoint_schema", "start", "skipped"]
+    assert event_writer.events == ["ensure_event_schema"]
+    assert writer.writes == []
+    assert "Pipeline: gdelt_run_all" in output
+    assert "Status: skipped" in output
+    assert "Storage backend: local" in output
+
+
+def test_run_all_force_bypasses_duplicate_window_checkpoint(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    checkpoint = FakeCheckpoint()
+    checkpoint.can_process_window = lambda *args: False
+    writer = FakeWriter()
+    event_writer = FakeEventWriter()
+    monkeypatch.setattr("jobs.etl.main.RAW_ROOT", tmp_path / "bronze/gdelt/events")
+    monkeypatch.setattr("jobs.etl.main.SILVER_ROOT", tmp_path / "silver/normalized_events")
+
+    result = run_all(
+        "latest",
+        storage_backend="local",
+        force=True,
+        client=FakeClient(),
+        checkpoint_service=checkpoint,
+        raw_writer=writer,
+        silver_writer=writer,
+        event_writer=event_writer,
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert checkpoint.events == ["ensure_checkpoint_schema", "start", "success"]
+    assert len(writer.writes) == 2
+    assert "Status: success" in output
+    assert "Records written to Postgres: 1" in output
+
+
+def test_run_all_database_writes_disabled_skips_postgres_services(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    writer = FakeWriter()
+    monkeypatch.setattr("jobs.etl.main.RAW_ROOT", tmp_path / "bronze/gdelt/events")
+    monkeypatch.setattr("jobs.etl.main.SILVER_ROOT", tmp_path / "silver/normalized_events")
+    monkeypatch.setattr(
+        "jobs.etl.main.CheckpointService",
+        lambda *_: (_ for _ in ()).throw(AssertionError("checkpoint should not be created")),
+    )
+    monkeypatch.setattr(
+        "jobs.etl.main.NormalizedEventWriter",
+        lambda *_: (_ for _ in ()).throw(AssertionError("event writer should not be created")),
+    )
+
+    result = run_all(
+        "latest",
+        storage_backend="local",
+        enable_database_writes=False,
+        client=FakeClient(),
+        raw_writer=writer,
+        silver_writer=writer,
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert len(writer.writes) == 2
+    assert "Status: success" in output
+    assert "Database writes: disabled" in output
+    assert "Records written to Postgres: skipped" in output
+    assert "Records written to ADLS silver: 1" in output
+
+
+def test_smoke_adls_writes_unique_bronze_and_silver_paths(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    writer = FakeWriter()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CONTAINER_APP_JOB_EXECUTION_NAME", "job-signalwatch-etl-dev-abc123")
+
+    result = smoke_adls("local", raw_writer=writer, silver_writer=writer)
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert len(writer.writes) == 2
+    assert writer.writes[0][1] == (
+        "bronze/_smoke_tests/job_execution=job-signalwatch-etl-dev-abc123/bronze-test.txt"
+    )
+    assert writer.writes[1][1] == (
+        "silver/_smoke_tests/job_execution=job-signalwatch-etl-dev-abc123/silver-test.jsonl"
+    )
+    assert "Pipeline: adls_smoke_test" in output
+    assert "Status: success" in output
+    assert "Database writes: disabled" in output
+    assert (
+        "Bronze smoke path: "
+        "bronze/_smoke_tests/job_execution=job-signalwatch-etl-dev-abc123/bronze-test.txt"
+        in output
+    )
+    assert (
+        "Silver smoke path: "
+        "silver/_smoke_tests/job_execution=job-signalwatch-etl-dev-abc123/silver-test.jsonl"
+        in output
+    )
 
 
 def test_normalize_command_reads_raw_zip(tmp_path, capsys, monkeypatch) -> None:
@@ -319,7 +466,21 @@ def test_checkpoint_failure_updates_status_counts_and_error() -> None:
     )
 
     statement, parameters = cursor.statements[0]
-    assert "status = 'failed'" in statement
+    assert "status = %s" in statement
     assert "finished_at = NOW()" in statement
     assert "error_message = %s" in statement
-    assert parameters == ("corrupt file", 10, 8, 2, run_id)
+    assert parameters == ("failure", "corrupt file", 10, 8, 2, run_id)
+
+
+def test_checkpoint_skipped_updates_status_and_reason() -> None:
+    cursor = FakeCursor()
+    run_id = uuid4()
+    service = CheckpointService(connection_factory=lambda _: FakeConnection(cursor))
+
+    service.mark_skipped(run_id, "already processed")
+
+    statement, parameters = cursor.statements[0]
+    assert "status = %s" in statement
+    assert "finished_at = NOW()" in statement
+    assert "error_message = %s" in statement
+    assert parameters == ("skipped", "already processed", run_id)
