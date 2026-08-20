@@ -153,3 +153,51 @@ GET /events/{event_id} returns one event by UUID
 unknown event_id returns 404
 GET /pipeline/health returns latest pipeline status
 API tests pass locally
+
+
+## MILESTONE 5 -- End-to-end GDELT bronze, normalize, Postgres, silver ##
+
+PS C:\Users\themi\OneDrive\Documents\signalWatch> .\.venv\Scripts\python.exe -m jobs.etl.main ingest --window latest --storage azure
+Pipeline: gdelt_events_ingestion
+Window: 2026-08-18T00:00:00Z
+Status: success
+Records read: 108538
+Records written: 108538
+Records failed: 0
+Raw path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/data/raw/gdelt/events/year=2026/month=08/day=18/hour=00/20260818.export.CSV.zip
+Database verification output:
+(UUID('e27792c8-ac50-4c28-83a0-35cfe31761cf'), 'success', datetime.datetime(2026, 8, 17, 19, 0, tzinfo=zoneinfo.ZoneInfo(key='America/Chicago')), datetime.datetime(2026, 8, 18, 19, 0, tzinfo=zoneinfo.ZoneInfo(key='America/Chicago')), 'abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/data/raw/gdelt/events/year=2026/month=08/day=18/hour=00/20260818.export.CSV.zip', 108538, 108538, 0, 'http://data.gdeltproject.org/events/20260818.export.CSV.zip', datetime.datetime(2026, 8, 20, 1, 57, 22, 968228, tzinfo=zoneinfo.ZoneInfo(key='America/Chicago')))
+Summary: GDELT file downloaded, raw file written to ADLS bronze path, and pipeline_runs.raw_output_path recorded successfully.
+
+
+
+
+Command executed:
+.\.venv\Scripts\python.exe -m jobs.etl.main run-all --window latest --storage azure
+
+Result:
+Pipeline: gdelt_run_all
+Status: success
+Storage backend: azure
+Bronze path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/bronze/gdelt/events/year=2026/month=08/day=19/hour=00/20260819.export.CSV.zip
+Silver path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/silver/normalized_events/year=2026/month=08/day=19/normalized-events-20260819.jsonl
+Records read: 110686
+Records normalized: 110686
+Records written to Postgres: 110686
+Records written to ADLS silver: 110686
+
+Database verification output:
+(UUID('382eedb1-2541-485c-9b9f-a14302f55ba3'), 'gdelt_run_all', 'success', 'azure', 'abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/bronze/gdelt/events/year=2026/month=08/day=19/hour=00/20260819.export.CSV.zip', 'abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/silver/normalized_events/year=2026/month=08/day=19/normalized-events-20260819.jsonl', 110686, 110686, 0, 'http://data.gdeltproject.org/events/20260819.export.CSV.zip', datetime.datetime(2026, 8, 20, 2, 7, 30, 548599, tzinfo=zoneinfo.ZoneInfo(key='America/Chicago')))
+
+Summary: GDELT file downloaded, raw zip written to ADLS bronze, rows parsed and normalized, normalized rows persisted to Postgres, normalized JSONL written to ADLS silver, and pipeline_runs populated with raw_output_path, normalized_output_path, and storage_backend.
+
+
+Pipeline: gdelt_run_all
+Status: success
+Storage backend: azure
+Bronze path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/bronze/gdelt/events/year=2026/month=08/day=19/hour=00/20260819.export.CSV.zip
+Silver path: abfss://signalwatch@stsignalwatchdev1.dfs.core.windows.net/silver/normalized_events/year=2026/month=08/day=19/normalized-events-20260819.jsonl
+Records read: 110686
+Records normalized: 110686
+Records written to Postgres: 110686
+Records written to ADLS silver: 110686

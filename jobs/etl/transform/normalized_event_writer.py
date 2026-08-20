@@ -102,7 +102,7 @@ def _build_upsert_statement() -> str:
     update_assignments = ", ".join(
         f"{column} = EXCLUDED.{column}"
         for column in NORMALIZED_EVENT_COLUMNS
-        if column not in {"id", "source_system", "source_event_id", "created_at"}
+        if column not in {"id", "source_system", "source_event_id", "created_at", "updated_at"}
     )
     return f"""
         INSERT INTO normalized_events ({columns})

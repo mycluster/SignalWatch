@@ -9,6 +9,9 @@ description = "GDELT-powered supply chain risk monitoring platform."
 readme = "readMe.md"
 requires-python = ">=3.9"
 dependencies = [
+    "azure-identity>=1.17.0",
+    "azure-storage-file-datalake>=12.15.0",
+    "cryptography<42; python_version == '3.9'",
     "fastapi>=0.115.0",
     "pydantic-settings>=2.6.0",
     "psycopg[binary]>=3.2.0",

@@ -16,4 +16,6 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 
 ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS source_url TEXT;
 ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS raw_output_path TEXT;
+ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS normalized_output_path TEXT;
+ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS storage_backend TEXT;
 ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT;

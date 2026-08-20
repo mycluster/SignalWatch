@@ -64,6 +64,8 @@ class CheckpointService:
         run_id: UUID,
         source_url: str | None = None,
         raw_output_path: str | None = None,
+        normalized_output_path: str | None = None,
+        storage_backend: str | None = None,
         file_size_bytes: int | None = None,
         records_read: int = 0,
         records_written: int = 0,
@@ -77,7 +79,8 @@ class CheckpointService:
                     """
 					UPDATE pipeline_runs
 					SET status = 'success', finished_at = NOW(), source_url = %s,
-						raw_output_path = %s, file_size_bytes = %s,
+						raw_output_path = %s, normalized_output_path = %s,
+						storage_backend = %s, file_size_bytes = %s,
 						records_read = %s, records_written = %s, records_failed = %s,
 						error_message = %s
 					WHERE id = %s
@@ -85,6 +88,8 @@ class CheckpointService:
                     (
                         source_url,
                         raw_output_path,
+                        normalized_output_path,
+                        storage_backend,
                         file_size_bytes,
                         records_read,
                         records_written,
@@ -127,18 +132,30 @@ class CheckpointService:
         self,
         pipeline_name: str = "gdelt_events_ingestion",
         source_system: str = "GDELT",
+        raw_output_path_prefix: str | None = None,
     ) -> datetime | None:
         """Return the end of the latest successful source window."""
         with self._connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
+                if raw_output_path_prefix:
+                    cursor.execute(
+                        """
+					SELECT MAX(source_window_end)
+					FROM pipeline_runs
+					WHERE pipeline_name = %s AND source_system = %s AND status = 'success'
+						AND raw_output_path LIKE %s
+					""",
+                        (pipeline_name, source_system, f"{raw_output_path_prefix}%"),
+                    )
+                else:
+                    cursor.execute(
+                        """
 					SELECT MAX(source_window_end)
 					FROM pipeline_runs
 					WHERE pipeline_name = %s AND source_system = %s AND status = 'success'
 					""",
-                    (pipeline_name, source_system),
-                )
+                        (pipeline_name, source_system),
+                    )
                 return cursor.fetchone()[0]
 
     def can_process_window(
@@ -146,9 +163,14 @@ class CheckpointService:
         window_start: datetime,
         pipeline_name: str = "gdelt_events_ingestion",
         source_system: str = "GDELT",
+        raw_output_path_prefix: str | None = None,
     ) -> bool:
         """Return whether a window is new or adjacent to the successful checkpoint."""
-        last_window_end = self.last_successful_window(pipeline_name, source_system)
+        last_window_end = self.last_successful_window(
+            pipeline_name,
+            source_system,
+            raw_output_path_prefix,
+        )
         return last_window_end is None or window_start >= last_window_end
 
     def did_finish_successfully(self, run_id: UUID) -> bool:

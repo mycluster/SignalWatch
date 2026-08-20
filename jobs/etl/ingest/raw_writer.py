@@ -1,11 +1,20 @@
-"""Local writer for persisting raw ingestion data."""
+"""Raw writer abstractions for persisting ingestion data."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol
 
 
-class RawWriter:
+class RawStorageWriter(Protocol):
+    """Common interface for raw storage backends."""
+
+    def write(self, content: bytes, destination_path: str) -> str:
+        """Write bytes to ``destination_path`` and return the resulting path."""
+        ...
+
+
+class LocalRawWriter:
     """Persist raw file content to a local destination path."""
 
     def write(self, content: bytes, destination_path: str) -> str:
@@ -22,3 +31,6 @@ class RawWriter:
             raise
 
         return str(path)
+
+
+RawWriter = LocalRawWriter

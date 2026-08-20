@@ -7,7 +7,7 @@ from zipfile import ZipFile
 
 from jobs.etl.ingest.checkpoint_service import CheckpointService
 from jobs.etl.ingest.gdelt_client import DownloadMetadata
-from jobs.etl.main import ingest, main
+from jobs.etl.main import ingest, main, run_all
 from jobs.etl.transform.parse_gdelt_events import GDELT_EVENT_FIELDS
 
 
@@ -52,6 +52,19 @@ def test_last_successful_window_reads_successful_checkpoint() -> None:
 
     assert service.last_successful_window() == expected_window
     assert "status = 'success'" in cursor.statements[0][0]
+
+
+def test_last_successful_window_can_filter_by_raw_output_path_prefix() -> None:
+    expected_window = datetime(2026, 8, 19, 23, 15, tzinfo=timezone.utc)
+    cursor = FakeCursor((expected_window,))
+    service = CheckpointService(connection_factory=lambda _: FakeConnection(cursor))
+
+    result = service.last_successful_window(raw_output_path_prefix="abfss://")
+
+    statement, parameters = cursor.statements[0]
+    assert result == expected_window
+    assert "raw_output_path LIKE %s" in statement
+    assert parameters[-1] == "abfss://%"
 
 
 class FakeClient:
@@ -100,9 +113,13 @@ class FakeCheckpoint:
 
 
 class FakeWriter:
+    def __init__(self) -> None:
+        self.writes = []
+
     def write(self, content, destination_path):
         Path(destination_path).parent.mkdir(parents=True, exist_ok=True)
         Path(destination_path).write_bytes(content)
+        self.writes.append((content, destination_path))
         return destination_path
 
 
@@ -142,6 +159,44 @@ def test_ingest_marks_success_only_after_raw_write(tmp_path, monkeypatch, capsys
     assert "Records read: 1" in output
     assert "Records written: 1" in output
     assert "Records failed: 0" in output
+
+
+def test_run_all_writes_bronze_postgres_silver_and_checkpoint(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    checkpoint = FakeCheckpoint()
+    writer = FakeWriter()
+    event_writer = FakeEventWriter()
+    monkeypatch.setattr("jobs.etl.main.RAW_ROOT", tmp_path / "bronze/gdelt/events")
+    monkeypatch.setattr("jobs.etl.main.SILVER_ROOT", tmp_path / "silver/normalized_events")
+
+    result = run_all(
+        "latest",
+        storage_backend="local",
+        client=FakeClient(),
+        checkpoint_service=checkpoint,
+        raw_writer=writer,
+        silver_writer=writer,
+        event_writer=event_writer,
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert checkpoint.events == ["ensure_checkpoint_schema", "start", "success"]
+    assert event_writer.events == ["ensure_event_schema"]
+    assert len(event_writer.persisted_events) == 1
+    assert len(writer.writes) == 2
+    assert "bronze/gdelt/events" in writer.writes[0][1].replace("\\", "/")
+    assert "silver/normalized_events" in writer.writes[1][1].replace("\\", "/")
+    assert writer.writes[1][0].endswith(b"\n")
+    assert checkpoint.success_kwargs["raw_output_path"]
+    assert checkpoint.success_kwargs["normalized_output_path"]
+    assert checkpoint.success_kwargs["storage_backend"] == "local"
+    assert checkpoint.success_kwargs["records_read"] == 1
+    assert checkpoint.success_kwargs["records_written"] == 1
+    assert "Pipeline: gdelt_run_all" in output
+    assert "Records written to Postgres: 1" in output
+    assert "Records written to ADLS silver: 1" in output
 
 
 def test_normalize_command_reads_raw_zip(tmp_path, capsys, monkeypatch) -> None:
@@ -228,6 +283,26 @@ def test_checkpoint_success_updates_record_movement_fields() -> None:
     assert 2845 in parameters
     assert 2810 in parameters
     assert 35 in parameters
+
+
+def test_checkpoint_success_updates_storage_lineage_fields() -> None:
+    cursor = FakeCursor()
+    run_id = uuid4()
+    service = CheckpointService(connection_factory=lambda _: FakeConnection(cursor))
+
+    service.mark_success(
+        run_id,
+        raw_output_path="abfss://bronze",
+        normalized_output_path="abfss://silver",
+        storage_backend="azure",
+    )
+
+    statement, parameters = cursor.statements[0]
+    assert "normalized_output_path = %s" in statement
+    assert "storage_backend = %s" in statement
+    assert "abfss://bronze" in parameters
+    assert "abfss://silver" in parameters
+    assert "azure" in parameters
 
 
 def test_checkpoint_failure_updates_status_counts_and_error() -> None:

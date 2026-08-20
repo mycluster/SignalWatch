@@ -62,6 +62,7 @@ def test_upsert_events_writes_normalized_events_with_conflict_handling() -> None
     assert written == 1
     assert "INSERT INTO normalized_events" in statement
     assert "ON CONFLICT (source_system, source_event_id)" in statement
+    assert statement.count("updated_at =") == 1
     assert parameters[0][2] == "123"
     assert parameters[0][17] == "LABOR_ACTION"
     assert parameters[0][19] == "SUPPLY_CHAIN"
