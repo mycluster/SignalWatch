@@ -34,4 +34,4 @@ jobs:
 
       - name: Build API Docker image
         run: |
-          docker build -f apps/api/Dockerfile -t signalwatch-api:test .
+          docker build -f Dockerfile -t signalwatch-api:test .
