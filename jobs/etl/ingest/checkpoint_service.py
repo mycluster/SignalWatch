@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 from uuid import UUID, uuid4
 
@@ -22,12 +23,20 @@ class CheckpointService:
         self.database_url = database_url or settings.database_url
         self._connection_factory = connection_factory or psycopg.connect
 
+    def ensure_schema(self, schema_path: str | Path = "sql/pipeline_runs.sql") -> None:
+        """Create pipeline-run tracking tables when missing."""
+        schema_sql = Path(schema_path).read_text(encoding="utf-8")
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                for statement in _split_sql_statements(schema_sql):
+                    cursor.execute(statement)
+
     def start_run(
         self,
         pipeline_name: str,
         source_system: str,
-        source_window_start: datetime,
-        source_window_end: datetime,
+        source_window_start: datetime | None = None,
+        source_window_end: datetime | None = None,
     ) -> UUID:
         """Create a running record and return its identifier."""
         run_id = uuid4()
@@ -53,35 +62,64 @@ class CheckpointService:
     def mark_success(
         self,
         run_id: UUID,
-        source_url: str,
-        raw_output_path: str,
-        file_size_bytes: int,
+        source_url: str | None = None,
+        raw_output_path: str | None = None,
+        file_size_bytes: int | None = None,
+        records_read: int = 0,
+        records_written: int = 0,
+        records_failed: int = 0,
+        error_message: str | None = None,
     ) -> None:
-        """Mark a run successful after its raw output has been written."""
+        """Mark a run successful and persist record-movement counts."""
         with self._connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
 					UPDATE pipeline_runs
 					SET status = 'success', finished_at = NOW(), source_url = %s,
-						raw_output_path = %s, file_size_bytes = %s
+						raw_output_path = %s, file_size_bytes = %s,
+						records_read = %s, records_written = %s, records_failed = %s,
+						error_message = %s
 					WHERE id = %s
 					""",
-                    (source_url, raw_output_path, file_size_bytes, run_id),
+                    (
+                        source_url,
+                        raw_output_path,
+                        file_size_bytes,
+                        records_read,
+                        records_written,
+                        records_failed,
+                        error_message[:4000] if error_message else None,
+                        run_id,
+                    ),
                 )
                 self._require_updated_row(cursor.rowcount, run_id)
 
-    def mark_failure(self, run_id: UUID, error_message: str) -> None:
+    def mark_failure(
+        self,
+        run_id: UUID,
+        error_message: str,
+        records_read: int = 0,
+        records_written: int = 0,
+        records_failed: int = 0,
+    ) -> None:
         """Mark a run failed without advancing the successful checkpoint."""
         with self._connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
 					UPDATE pipeline_runs
-					SET status = 'failed', finished_at = NOW(), error_message = %s
+					SET status = 'failed', finished_at = NOW(), error_message = %s,
+						records_read = %s, records_written = %s, records_failed = %s
 					WHERE id = %s
 					""",
-                    (error_message[:4000], run_id),
+                    (
+                        error_message[:4000],
+                        records_read,
+                        records_written,
+                        records_failed,
+                        run_id,
+                    ),
                 )
                 self._require_updated_row(cursor.rowcount, run_id)
 
@@ -131,3 +169,7 @@ class CheckpointService:
     def _require_updated_row(rowcount: int, run_id: UUID) -> None:
         if rowcount != 1:
             raise LookupError(f"Pipeline run {run_id} was not found")
+
+
+def _split_sql_statements(schema_sql: str) -> list[str]:
+    return [statement.strip() for statement in schema_sql.split(";") if statement.strip()]
