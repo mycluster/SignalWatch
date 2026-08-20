@@ -1,459 +1,404 @@
-# Development Roadmap
+# SignalWatch Development Roadmap
 
-SignalWatch is organized around engineering milestones rather than fixed weekly delivery dates. Each milestone produces a usable increment of the platform and builds toward a complete, portfolio-ready system.
+SignalWatch is organized around engineering milestones rather than fixed delivery dates. The roadmap originally placed cloud deployment near the end of the project. During implementation, cloud storage, runtime deployment, and CI/CD were moved earlier so later analytical and alerting features can be built on a repeatable Azure foundation.
+
+The product direction has not changed. Watchlists, alerts, risk scoring, data quality, observability, and the dashboard remain planned; their milestone numbers changed to accommodate the cloud-first build order.
+
+## Status Legend
+
+- **Complete** — implemented and verified
+- **In progress** — current milestone
+- **Planned** — not yet started
+- **Optional** — valuable extension that is not required for the core portfolio project
 
 ---
 
-## Milestone 1: Project Foundation
+## Milestone 1: Local Runtime Foundation — Complete
 
 ### Objective
-Create a clean, maintainable project foundation that supports local development, testing, and future cloud deployment.
 
-### Scope
-- Create the GitHub repository
-- Set up the Python project structure
-- Add FastAPI application skeleton
-- Add Docker Compose
-- Add PostgreSQL container
-- Add test framework
-- Add linting and formatting tools
-- Define initial project conventions
-- Draft the first README
-- Define the initial normalized event schema
+Create a maintainable local development foundation for the API, database, tests, containers, and CI validation.
 
-### Deliverables
-- Running local API service
-- Working Docker Compose environment
-- Basic `/health` endpoint
-- Initial test suite scaffold
-- Initial project documentation
+### Delivered
+
+- Python project structure
+- Docker Compose runtime
+- Local PostgreSQL dependency
+- FastAPI health endpoint
+- Test framework
+- Linting and formatting
+- GitHub Actions CI validation
+- Docker build validation
 
 ### Success Criteria
-The project can be cloned, started locally, and verified through a passing health check and basic test command.
+
+The repository can be cloned, started locally, and validated through passing health, lint, test, and container-build checks.
 
 ---
 
-## Milestone 2: GDELT Ingestion Prototype
+## Milestone 2: GDELT Raw Ingestion Workflow — Complete
 
 ### Objective
-Build the first working ingestion flow for retrieving GDELT data and storing ingestion metadata.
 
-### Scope
-- Implement a GDELT ingestion client
-- Pull a defined GDELT event window
-- Store raw source data locally or in object storage
-- Create a `pipeline_runs` table
-- Track ingestion start time, end time, status, and record counts
-- Add retry handling
-- Add structured logging
-- Add basic checkpointing
+Download a defined GDELT event window and persist the raw source artifact with operational metadata.
 
-### Deliverables
-- Repeatable ingestion command
-- Raw GDELT records persisted
-- Pipeline run metadata stored
-- Ingestion logs
-- Tests for ingestion behavior
+### Delivered
+
+- GDELT ingestion client
+- Local raw file writer
+- ETL CLI entry point
+- Raw download validation
+- `pipeline_runs` tracking
+- Failure handling, retry behavior, and structured logs
+- Tests for the ingestion workflow
 
 ### Success Criteria
-A developer can run one command that pulls a GDELT event window, stores the raw data, and records the pipeline run without manually editing state.
+
+One command downloads a GDELT event window, stores the raw file, and records the pipeline attempt without manual state changes.
 
 ---
 
-## Milestone 3: Normalized Event Model
+## Milestone 3: Normalize and Persist GDELT Events — Complete
 
 ### Objective
-Transform raw GDELT records into clean, queryable internal event records.
 
-### Scope
-- Define normalized event tables
-- Parse event timestamps
-- Normalize country and location fields
-- Extract actors, event codes, themes, and source URLs
-- Map raw GDELT event codes to internal categories
-- Add basic supply-chain domain classification
-- Add deduplication logic
-- Preserve lineage back to raw source files
+Transform raw GDELT records into stable internal event records and persist them for application queries.
 
-### Deliverables
-- Normalized event schema
-- Transformation pipeline
-- Queryable event records
-- Category mapping logic
-- Deduplication logic
-- Unit tests for parsing and transformation
+### Delivered
+
+- Raw `.CSV.zip` parsing
+- Normalized event model
+- Timestamp, location, actor, source, and event-code mapping
+- Initial supply-chain relevance classification
+- Deduplication and duplicate-safe reruns
+- PostgreSQL persistence
+- Raw-source lineage fields
+- Pipeline read, write, and failure counts
+- Transformation tests
 
 ### Success Criteria
-Raw GDELT data can be transformed into stable internal records that are easier to query and reason about than the source format.
+
+Raw files are converted into queryable normalized records while preserving lineage and safe replay behavior.
 
 ---
 
-## Milestone 4: Event Query API
+## Milestone 4: Event Query API — Complete
 
 ### Objective
-Expose normalized event data through a backend API.
 
-### Scope
-- Build `GET /events`
-- Build `GET /events/{event_id}`
-- Add filters for country, event category, domain, and time window
-- Add pagination
-- Add typed response models
-- Add basic aggregate metadata
-- Add `GET /pipeline/health`
-- Add API tests
-- Document example API requests
+Expose persisted normalized events and pipeline state through FastAPI.
 
-### Deliverables
-- Searchable REST API
-- Event detail endpoint
+### Delivered
+
+- `GET /events`
+- `GET /events/{event_id}`
+- Pagination and event filters
+- Typed response schemas
+- Event service layer
 - Pipeline health endpoint
-- API test coverage
-- OpenAPI documentation
+- API tests and OpenAPI documentation
 
 ### Success Criteria
-Users can query event records by geography, category, domain, and time window through documented API endpoints.
+
+Users can query normalized events by geography, category, domain, supply-chain relevance, and time window, and can inspect the latest pipeline status.
 
 ---
 
-## Milestone 5: Trend Detection and Risk Scoring
+## Milestone 5: Azure Data Lake Storage Integration — Complete
 
 ### Objective
-Create the first intelligence layer by detecting abnormal event activity and generating explainable risk scores.
 
-### Scope
-- Create event volume baselines
-- Calculate rolling event counts
-- Detect spikes against historical baselines
-- Implement initial risk scoring
-- Store risk score history
-- Add explanation fields for each score
-- Build `GET /risk/hotspots`
-- Build `GET /risk/timeseries`
+Move dataset artifacts from local-only storage to Azure Data Lake Storage Gen2 while retaining local development support.
 
-### Deliverables
-- Risk scoring job
-- Event baseline tables
-- Hotspot endpoint
-- Risk time-series endpoint
-- Explainable scoring output
-- Tests for scoring logic
+### Delivered
+
+- ADLS Gen2 storage account and container
+- Bronze path for raw GDELT `.CSV.zip` files
+- Silver path for normalized Parquet output
+- Azure storage writer
+- Configurable local or Azure storage backend
+- Cloud-compatible pathing and source lineage
+- Credential configuration without hardcoding secrets
 
 ### Success Criteria
-The system can identify abnormal supply-chain-related event activity and explain why a region, topic, or category was flagged.
+
+The ETL pipeline writes raw data to bronze and normalized Parquet data to silver, while local storage mode continues to work.
 
 ---
 
-## Milestone 6: Watchlists and Alerts
+## Milestone 6: Azure ETL Runtime — Complete
 
 ### Objective
-Allow users to define monitored topics and generate alerts when event patterns match those rules.
+
+Run the ETL workflow as an Azure Container Apps Job connected to ADLS and operational logging.
+
+### Delivered
+
+- ETL Docker image
+- Azure Container Registry repository
+- Azure Container Apps Job
+- Runtime environment configuration
+- ADLS connectivity
+- Cloud execution logs
+- Manual job execution
+- Verified successful cloud run
+
+### Operating Decision
+
+The job currently uses manual execution to control portfolio-project cost. A scheduled trigger can be enabled later without redesigning the ETL runtime.
+
+### Success Criteria
+
+The job runs successfully in Azure, writes expected bronze and silver artifacts, and produces diagnosable execution logs.
+
+---
+
+## Milestone 7: GitHub Actions to Azure CI/CD — In Progress
+
+### Objective
+
+Build, publish, and deploy SignalWatch container changes to Azure from GitHub Actions using secure, repeatable authentication.
 
 ### Scope
-- Create watchlist tables
-- Add watchlist API endpoints
-- Define watchlist rules by region, topic, category, and threshold
-- Implement alert generation logic
-- Add alert severity levels
-- Add alert explanation text
-- Store alert history
-- Add mock notification support
+
+- Configure GitHub-to-Azure OpenID Connect authentication
+- Assign least-privilege Azure roles
+- Retain pull-request linting and tests
+- Build versioned ETL container images
+- Push images to Azure Container Registry
+- Update the Azure Container Apps Job image
+- Add environment-specific GitHub configuration
+- Add deployment verification and failure diagnostics
+- Document rollback and manual deployment procedures
+- Add API container deployment when the API cloud runtime is provisioned
 
 ### Deliverables
-- Watchlist data model
-- Watchlist API endpoints
+
+- Azure deployment workflow
+- OIDC-based authentication
+- Versioned ACR images
+- Automated Container Apps Job update
+- Deployment verification
+- CI/CD runbook
+
+### Success Criteria
+
+- Pull requests run linting and tests
+- Merges to `main` build a versioned image
+- Images are pushed to ACR
+- The Azure Container Apps Job is updated from GitHub Actions
+- No long-lived Azure credential is stored in the repository
+- A failed deployment is visible and recoverable
+
+---
+
+## Milestone 8: Snowflake Batch Load Integration — Planned
+
+### Objective
+
+Load curated SignalWatch outputs from ADLS into Snowflake for analytical querying.
+
+### Scope
+
+- Create Snowflake database, schemas, and warehouse
+- Configure an Azure storage integration
+- Create an external stage over the selected silver or gold path
+- Define Parquet file formats and target tables
+- Add idempotent `COPY INTO` batch loads
+- Record load history
+- Reconcile Snowflake counts with ADLS and PostgreSQL
+- Document setup and operating procedures
+
+### Success Criteria
+
+Snowflake can securely access the configured ADLS path, load curated files, and reconcile the resulting data with upstream systems.
+
+---
+
+## Milestone 9: Snowflake Analytics Views — Planned
+
+### Objective
+
+Create documented analytical models that demonstrate why Snowflake exists in the architecture beyond the operational API.
+
+### Scope
+
+- Supply-chain event trend view
+- Country and category aggregation view
+- High-risk event view
+- Source coverage view
+- Pipeline load audit view
+- Example analytical SQL and validation queries
+
+### Success Criteria
+
+Snowflake answers aggregate trend, risk, source-coverage, and load-audit questions through reusable documented views.
+
+---
+
+## Milestone 10: Snowpipe Auto-Ingest — Optional
+
+### Objective
+
+Evaluate continuous ingestion from Azure storage after the batch-loading model is stable.
+
+### Scope
+
+- Azure Event Grid integration
+- Snowflake notification integration
+- Snowpipe definition
+- Auto-ingest monitoring
+- Failure handling and troubleshooting documentation
+- Cost and operational-value evaluation
+
+### Success Criteria
+
+New eligible files can trigger Snowflake loads, failed loads can be diagnosed, and the project documents whether auto-ingest provides enough value to retain.
+
+---
+
+## Milestone 11: Risk Scoring and Data Quality — Planned
+
+### Objective
+
+Add explainable intelligence and trust signals to the platform.
+
+### Scope
+
+- Rolling event-volume baselines
+- Spike detection
+- Explainable risk scores
+- Risk score history
+- Event uniqueness and range checks
+- Freshness tracking
+- Duplicate, null-location, and unmapped-code rates
+- Persisted data-quality results
+- Risk and quality API endpoints
+- Tests for scoring and validation rules
+
+### Success Criteria
+
+The system detects abnormal activity, explains each risk score, and reports whether source and normalized data satisfy defined quality thresholds.
+
+---
+
+## Milestone 12: Watchlists and Alerts — Planned
+
+### Objective
+
+Allow users to monitor selected regions, topics, categories, and thresholds and generate explainable alerts when matching patterns occur.
+
+### Scope
+
+- Watchlist and watchlist-rule tables
+- Watchlist CRUD API endpoints
+- Rules by region, topic, category, and risk threshold
 - Alert generation job
-- Alert history table
+- Alert severity levels
+- Alert explanation text
+- Alert history
+- Mock notification support
 - Example watchlist configurations
-- Example generated alerts
 
 ### Success Criteria
-A user can create a watchlist and receive explainable alerts when matching event patterns exceed defined thresholds.
+
+A user can create a watchlist and receive an explainable stored alert when matching event patterns exceed a defined threshold.
 
 ---
 
-## Milestone 7: Data Quality Layer
+## Milestone 13: Observability and Dashboard — Planned
 
 ### Objective
-Add validation checks that make the platform more trustworthy and operationally realistic.
+
+Make SignalWatch easy to operate and demonstrate.
 
 ### Scope
-- Add event uniqueness checks
-- Validate timestamp ranges
-- Validate latitude and longitude ranges
-- Validate country codes when present
-- Track source freshness
-- Track duplicate rate
-- Track null location rate
-- Track unmapped event-code rate
-- Store quality check results
-- Expose data quality status through API
 
-### Deliverables
-- Data quality check framework
-- `data_quality_results` table
-- Freshness checks
-- Duplicate-rate checks
-- Null-rate checks
-- Data quality API output
-- Tests for validation rules
-
-### Success Criteria
-The platform can report whether the data is fresh, valid, and within expected quality thresholds.
-
----
-
-## Milestone 8: Observability and Operational Health
-
-### Objective
-Make the platform observable like a real production system.
-
-### Scope
-- Add structured logging
-- Add service metrics
-- Add ingestion metrics
-- Add API latency metrics
-- Add pipeline failure metrics
-- Add Prometheus support
-- Add Grafana dashboard
-- Add alerts for stale ingestion or repeated failures
-
-### Deliverables
-- Structured application logs
-- Prometheus metrics endpoint
-- Grafana dashboard
-- Pipeline health dashboard
-- Service health dashboard
-- Operational runbook notes
-
-### Success Criteria
-An engineer can identify whether the system is healthy, whether ingestion is fresh, and whether failures are happening without reading raw logs manually.
-
----
-
-## Milestone 9: Dashboard and Demo Experience
-
-### Objective
-Create a user-facing dashboard that clearly demonstrates the value of the system.
-
-### Scope
-- Build dashboard landing page
-- Add current risk summary
-- Add event trend visualization
-- Add regional hotspot view
-- Add alert feed
-- Add source/event drill-down
-- Add pipeline health panel
-- Add data quality panel
-- Add screenshots to README
-- Write demo walkthrough
-
-### Deliverables
-- Working dashboard
-- Risk summary view
-- Event trend view
+- Structured application and pipeline logging
+- Service, API latency, ingestion, freshness, and failure metrics
+- Operational health dashboard
+- Current risk summary
+- Event trend and regional hotspot views
 - Alert feed
-- Pipeline health panel
-- Data quality panel
-- Demo script
-- README screenshots
+- Data-quality panel
+- Source and event drill-down
+- Operational runbook and demo walkthrough
 
 ### Success Criteria
-The project can be demonstrated end-to-end: ingest data, normalize events, query the API, detect risks, generate alerts, and show system health.
+
+An engineer can assess system health without manually reading raw logs, and a viewer can follow an end-to-end demo from ingestion through trends, risk, and alerts.
 
 ---
 
-## Milestone 10: Cloud Deployment
+## Milestone 14: Evaluation and Project Hardening — Planned
 
 ### Objective
-Deploy the platform to a real cloud environment with repeatable infrastructure.
+
+Evaluate alert usefulness, improve reliability, and finish the project as a credible engineering case study.
 
 ### Scope
-- Add Terraform configuration
-- Provision cloud storage
-- Provision database resources
-- Deploy API container
-- Deploy scheduled ingestion job
-- Configure secrets management
-- Configure environment variables
-- Add CI/CD workflow
-- Document deployment process
 
-### Deliverables
-- Cloud-hosted API
-- Scheduled cloud ingestion job
-- Infrastructure-as-code
-- CI/CD pipeline
-- Deployment documentation
-- Environment configuration guide
-
-### Success Criteria
-The platform can be deployed from source control into a cloud environment using documented, repeatable steps.
-
----
-
-## Milestone 11: Evaluation and Project Hardening
-
-### Objective
-Add evaluation, reliability improvements, and documentation that make the project credible as a portfolio case study.
-
-### Scope
-- Create a small labeled alert evaluation set
-- Review false positives and useful alerts
-- Document known limitations
-- Document design tradeoffs
-- Add architecture diagrams
-- Add data model documentation
-- Add operational runbook
-- Improve test coverage
-- Clean up repository issues
-- Prepare resume bullets and case-study notes
-
-### Deliverables
-- Evaluation notes
-- Known limitations section
-- Architecture documentation
-- Data model documentation
-- Operational runbook
-- Final README polish
+- Small labeled alert-evaluation dataset
+- False-positive and useful-alert review
+- Known limitations and design tradeoffs
+- Architecture and data-model diagrams
+- Expanded operational runbooks
+- Test-coverage improvements
+- Security and cost review
+- Repository cleanup
+- Final README, screenshots, and demo materials
 - Resume-ready project bullets
 
 ### Success Criteria
-The project clearly communicates not only what was built, but why it was designed that way, how it can be operated, and what its limitations are.
+
+The project communicates what was built, why it was designed this way, how it is operated, how its outputs were evaluated, and what limitations remain.
 
 ---
 
-## Recommended Milestone Sets
+## Current Build Order
 
-### MVP Milestone Set
-The minimum viable version of SignalWatch should include:
+1. Local Runtime Foundation — Complete
+2. GDELT Raw Ingestion Workflow — Complete
+3. Normalize and Persist GDELT Events — Complete
+4. Event Query API — Complete
+5. Azure Data Lake Storage Integration — Complete
+6. Azure ETL Runtime — Complete
+7. GitHub Actions to Azure CI/CD — In progress
+8. Snowflake Batch Load Integration — Planned
+9. Snowflake Analytics Views — Planned
+10. Snowpipe Auto-Ingest — Optional
+11. Risk Scoring and Data Quality — Planned
+12. Watchlists and Alerts — Planned
+13. Observability and Dashboard — Planned
+14. Evaluation and Project Hardening — Planned
 
-- Project foundation
-- GDELT ingestion prototype
-- Normalized event model
-- Event query API
-- Basic risk scoring
-- Basic data freshness check
+## Architecture Direction
 
-At that point, the project is already useful and demonstrable.
+```text
+GDELT
+  -> ETL worker
+  -> ADLS bronze
+  -> normalization
+  -> PostgreSQL application tables + ADLS silver Parquet
+  -> FastAPI event API
+  -> Snowflake analytical layer
+  -> risk scoring and data-quality results
+  -> watchlists and alerts
+  -> operational and user-facing dashboards
+```
 
-### Full Portfolio Milestone Set
-The complete portfolio version should include:
+The ordering deliberately establishes durable storage, cloud execution, and deployment automation before adding warehouse analytics and higher-level product features.
 
-- Project foundation
-- GDELT ingestion
-- Normalized event model
-- Event query API
-- Trend detection and risk scoring
-- Watchlists and alerts
-- Data quality layer
-- Observability and operational health
-- Dashboard and demo experience
-- Cloud deployment
-- Evaluation and project hardening
+## MVP and Portfolio Targets
 
-This full milestone set demonstrates backend engineering, data engineering, platform operations, observability, and product-oriented system design.
+### Current MVP Foundation
 
-### Recommended Build Order
+Milestones 1–7 provide the operated platform foundation: ingestion, normalization, application access, cloud storage, cloud execution, and CI/CD.
 
-1. Foundation
-2. Ingestion
-3. Normalization
-4. API
-5. Risk Scoring
-6. Watchlists and Alerts
-7. Data Quality
-8. Observability
-9. Dashboard
-10. Cloud Deployment
-11. Evaluation and Polish
+### Analytical MVP
 
-This order keeps the project grounded: prove the ingestion, transformation, and service layers before adding dashboard polish or advanced scoring.
-Document deployment process
-Deliverables
-Cloud-hosted API
-Scheduled cloud ingestion job
-Infrastructure-as-code
-CI/CD pipeline
-Deployment documentation
-Environment configuration guide
-Success Criteria
+Milestones 8, 9, and 11 add Snowflake analytics, explainable risk scoring, and data-quality reporting.
 
-The platform can be deployed from source control into a cloud environment using documented, repeatable steps.
+### Full Portfolio Project
 
-Milestone 11: Evaluation and Project Hardening
-Objective
-
-Add evaluation, reliability improvements, and documentation that make the project credible as a portfolio case study.
-
-Scope
-Create a small labeled alert evaluation set
-Review false positives and useful alerts
-Document known limitations
-Document design tradeoffs
-Add architecture diagrams
-Add data model documentation
-Add operational runbook
-Improve test coverage
-Clean up repository issues
-Prepare resume bullets and case-study notes
-Deliverables
-Evaluation notes
-Known limitations section
-Architecture documentation
-Data model documentation
-Operational runbook
-Final README polish
-Resume-ready project bullets
-Success Criteria
-
-The project clearly communicates not only what was built, but why it was designed that way, how it can be operated, and what its limitations are.
-
-MVP Milestone Set
-
-The minimum viable version of SignalWatch should include:
-
-Project foundation
-GDELT ingestion prototype
-Normalized event model
-Event query API
-Basic risk scoring
-Basic data freshness check
-
-At that point, the project is already useful and demonstrable.
-
-Full Portfolio Milestone Set
-
-The complete portfolio version should include:
-
-Project foundation
-GDELT ingestion
-Normalized event model
-Event query API
-Trend detection and risk scoring
-Watchlists and alerts
-Data quality layer
-Observability and operational health
-Dashboard and demo experience
-Cloud deployment
-Evaluation and project hardening
-
-This full milestone set demonstrates backend engineering, data engineering, platform operations, observability, and product-oriented system design.
-
-Recommended Build Order
-
-The recommended order is:
-
-Foundation
-→ Ingestion
-→ Normalization
-→ API
-→ Risk Scoring
-→ Watchlists and Alerts
-→ Data Quality
-→ Observability
-→ Dashboard
-→ Cloud Deployment
-→ Evaluation and Polish
-
-This order keeps the project grounded. The platform should prove that it can reliably ingest, transform, and serve data before adding dashboard polish or advanced scoring.
+Milestones 1–14 demonstrate backend engineering, data engineering, cloud/platform operations, CI/CD, warehouse integration, data quality, observability, evaluation, and product-oriented system design.
