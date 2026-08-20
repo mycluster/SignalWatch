@@ -48,7 +48,10 @@ class NormalizedEvent:
     is_supply_chain_related: bool = False
     confidence_score: float | None = None
     duplicate_group_id: str | None = None
+    pipeline_run_id: UUID | None = None
     normalized_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self) -> None:
         stable_id = uuid5(NAMESPACE_URL, f"{self.source_system}:{self.source_event_id}")

@@ -49,6 +49,8 @@ NORMALIZED_EVENT_COLUMNS = (
     "confidence_score",
     "pipeline_run_id",
     "normalized_at",
+    "created_at",
+    "updated_at",
 )
 
 
@@ -100,7 +102,7 @@ def _build_upsert_statement() -> str:
     update_assignments = ", ".join(
         f"{column} = EXCLUDED.{column}"
         for column in NORMALIZED_EVENT_COLUMNS
-        if column not in {"id", "source_system", "source_event_id"}
+        if column not in {"id", "source_system", "source_event_id", "created_at"}
     )
     return f"""
         INSERT INTO normalized_events ({columns})
@@ -153,6 +155,8 @@ def _event_parameters(
         event.article_count,
         event.is_supply_chain_related,
         event.confidence_score,
-        pipeline_run_id,
+        pipeline_run_id or event.pipeline_run_id,
         event.normalized_at,
+        event.created_at,
+        event.updated_at,
     )

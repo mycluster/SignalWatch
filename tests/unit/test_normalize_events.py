@@ -1,5 +1,7 @@
 """Tests for GDELT event normalization."""
 
+from uuid import UUID
+
 from jobs.etl.transform.normalize_events import (
     GDELT_TO_NORMALIZED_FIELDS,
     normalize_gdelt_event,
@@ -152,3 +154,27 @@ def test_normalize_accepts_date_added_without_time_component() -> None:
     )
 
     assert event.event_timestamp.isoformat() == "2026-08-18T00:00:00+00:00"
+
+
+def test_normalize_populates_snowflake_lineage_fields() -> None:
+    pipeline_run_id = UUID("00000000-0000-0000-0000-000000000123")
+
+    event = normalize_gdelt_event(
+        {
+            "GLOBALEVENTID": "lineage-1",
+            "SQLDATE": "20260820",
+            "EventCode": "010",
+            "EventRootCode": "01",
+        },
+        source_file_path="data/raw/gdelt/events/example.CSV.zip",
+        pipeline_run_id=pipeline_run_id,
+    )
+
+    assert event.source_system == "GDELT"
+    assert event.source_event_id == "lineage-1"
+    assert event.source_file_path == "data/raw/gdelt/events/example.CSV.zip"
+    assert event.raw_record_hash
+    assert event.pipeline_run_id == pipeline_run_id
+    assert event.event_timestamp.isoformat() == "2026-08-20T00:00:00+00:00"
+    assert event.created_at.tzinfo is not None
+    assert event.updated_at == event.created_at

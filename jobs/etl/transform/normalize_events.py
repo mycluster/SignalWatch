@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
+from uuid import UUID
 
 from jobs.etl.transform.event_category_mapper import map_event_category
 from packages.signalwatch_common.enums import Domain, EventCategory
@@ -94,8 +95,10 @@ _FIELD_ALIASES = {
 def normalize_gdelt_event(
     row: dict[str, str],
     source_file_path: str | None = None,
+    pipeline_run_id: UUID | None = None,
 ) -> NormalizedEvent:
     """Convert one parsed GDELT event row into the shared normalized model."""
+    normalized_at = datetime.now(timezone.utc)
     event_code = _empty_to_none(_value(row, "EventCode"))
     root_code = _empty_to_none(_value(row, "EventRootCode"))
     category = map_event_category(root_code, event_code)
@@ -118,7 +121,10 @@ def normalize_gdelt_event(
         source_url=source_url,
         raw_record_hash=_stable_hash(row),
         event_date=_parse_yyyymmdd(_value(row, "SQLDATE")),
-        event_timestamp=_parse_yyyymmddhhmmss(_value(row, "DATEADDED")),
+        event_timestamp=_parse_event_timestamp(
+            _value(row, "DATEADDED"),
+            _value(row, "SQLDATE"),
+        ),
         country_code=_empty_to_none(_value(row, "ActionGeo_CountryCode")),
         admin_region=_empty_to_none(_value(row, "ActionGeo_ADM1Code")),
         city=location_text,
@@ -147,15 +153,20 @@ def normalize_gdelt_event(
             if is_supply_chain_related
             else DEFAULT_CONFIDENCE_SCORE
         ),
+        pipeline_run_id=pipeline_run_id,
+        normalized_at=normalized_at,
+        created_at=normalized_at,
+        updated_at=normalized_at,
     )
 
 
 def normalize_gdelt_events(
     rows: list[dict[str, str]],
     source_file_path: str | None = None,
+    pipeline_run_id: UUID | None = None,
 ) -> list[NormalizedEvent]:
     """Normalize multiple parsed GDELT event rows."""
-    return [normalize_gdelt_event(row, source_file_path) for row in rows]
+    return [normalize_gdelt_event(row, source_file_path, pipeline_run_id) for row in rows]
 
 
 def _supply_chain_relevance_score(
@@ -205,6 +216,10 @@ def _parse_yyyymmddhhmmss(value: str | None):
         return None
     date_format = "%Y%m%d" if len(value) == 8 else "%Y%m%d%H%M%S"
     return datetime.strptime(value, date_format).replace(tzinfo=timezone.utc)
+
+
+def _parse_event_timestamp(date_added: str | None, sql_date: str | None):
+    return _parse_yyyymmddhhmmss(date_added) or _parse_yyyymmddhhmmss(sql_date)
 
 
 def _to_float(value: str | None) -> float | None:

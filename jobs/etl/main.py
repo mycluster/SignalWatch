@@ -121,7 +121,13 @@ def normalize(
         row_errors = []
         for row_number, row in enumerate(parsed_rows, start=1):
             try:
-                normalized_events.append(normalize_gdelt_event(row, source_file_path=str(raw_path)))
+                normalized_events.append(
+                    normalize_gdelt_event(
+                        row,
+                        source_file_path=str(raw_path),
+                        pipeline_run_id=run_id,
+                    )
+                )
             except Exception as error:
                 records_failed += 1
                 row_errors.append(f"row {row_number}: {error}")

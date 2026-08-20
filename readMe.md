@@ -1,448 +1,988 @@
 # SignalWatch
 
-**GDELT-Powered Supply Chain Risk Monitoring Platform**
+## GDELT-Powered Global Event Monitoring Platform
 
-SignalWatch is a production-style data platform that ingests global event data from GDELT, normalizes noisy public records, detects supply-chain disruption signals, and surfaces those signals through APIs, dashboards, alerts, and observability tooling.
+SignalWatch is a production-style data engineering and platform project that ingests GDELT global event data, normalizes raw event records, stores queryable data locally and in cloud storage, and prepares curated outputs for downstream analytics in Snowflake.
 
-This project demonstrates full-stack engineering judgment across backend development, data pipelines, cloud/platform operations, data quality, evaluation, and observability. It is designed as a realistic internal platform that turns frequently updated public event data into an explainable operational intelligence product.
-
----
-
-## Problem Statement
-
-Global public event data is abundant but difficult to use directly. Raw event feeds are often:
-
-- Noisy
-- Duplicated
-- Inconsistently categorized
-- Difficult to search
-- Difficult to trust without quality checks
-- Hard to operationalize without alerts, scoring, and context
-
-Organizations that depend on global operations, logistics, or supply chains need more than raw news and event feeds. They need reliable signals, clear explanations, and confidence indicators.
-
-SignalWatch addresses this by ingesting GDELT event data, applying normalization and validation, detecting abnormal activity, and surfacing supply-chain-related risk signals through APIs and dashboards.
+The project is designed to demonstrate backend engineering, data pipeline development, cloud/platform operations, CI/CD, data quality, observability, and warehouse integration.
 
 ---
 
-## Project Goals
+## Project Purpose
 
-The project is designed to demonstrate:
+SignalWatch converts noisy public event data into a structured event intelligence platform.
 
-- Incremental data ingestion
-- Raw-to-curated data modeling
-- Backend API design
-- Scheduled jobs and checkpointing
-- Data quality validation
-- Risk scoring and trend detection
-- Observability and pipeline monitoring
-- Cloud-ready architecture
-- Infrastructure-as-code
-- Portfolio-quality system design documentation
+The initial focus is supply-chain risk monitoring. The system ingests GDELT event files, normalizes them into a stable internal schema, persists records to Postgres for API access, and will later publish curated datasets to Azure Data Lake Storage Gen2 and Snowflake.
+
+The goal is not simply to download a public dataset or build a dashboard. The goal is to build an operated data platform with clear ingestion, persistence, lineage, cloud storage, automation, observability, and analytical serving layers.
 
 ---
 
-## Local Development
+## Current Project Status
 
-Create a virtual environment and install the project with development tools:
+The project has completed the local foundation and raw ingestion milestones.
 
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-```
+Completed:
 
-For a requirements-file based setup, use:
+* Local project skeleton
+* Docker Compose runtime foundation
+* FastAPI health endpoint
+* Postgres local dependency
+* GitHub Actions CI validation
+* GDELT raw file download workflow
+* Local raw file validation
+* In-memory normalization workflow
+* Persistence of normalized GDELT events to Postgres
 
-```powershell
-python -m pip install -r requirements.txt
-```
+Current focus:
 
-Docker Compose requires Docker Desktop or another Docker Engine installation available on your PATH.
-
-Run the FastAPI app:
-
-```powershell
-uvicorn signalwatch.main:app --reload
-```
-
-Start PostgreSQL:
-
-```powershell
-docker compose up -d postgres
-```
-
-The default local database connection is:
-
-```text
-postgresql://signalwatch:signalwatch@localhost:5432/signalwatch
-```
-
-Verify the service:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-Invoke-RestMethod http://127.0.0.1:8000/api/v1/health
-```
-
-Run tests and linting:
-
-```powershell
-pytest
-ruff check .
-```
-
-Stop local containers:
-
-```powershell
-docker compose down
-```
-
----
-
-## Use Case
-
-The initial use case is supply-chain disruption monitoring.
-
-SignalWatch monitors event signals related to:
-
-- Labor strikes
-- Protests
-- Port disruption
-- Border closures
-- Transportation delays
-- Fuel shortages
-- Civil unrest
-- Natural disasters
-- Conflict near logistics corridors
-- Negative media trends around infrastructure or trade activity
-
-Example questions the platform should answer:
-
-- Are protest-related transportation events increasing in a specific region?
-- Which countries are showing abnormal supply-chain-related activity?
-- Are there event spikes near major ports or logistics hubs?
-- What sources explain a generated alert?
-- Is the underlying data fresh and trustworthy?
+* Expose persisted normalized events through FastAPI endpoints
+* Prepare Azure Data Lake Storage Gen2 as the cloud dataset destination
+* Add Snowflake as an optional downstream analytical warehouse layer
 
 ---
 
 ## High-Level Architecture
 
 ```text
-GDELT Event Data
-      ↓
-Scheduled Ingestion Job
-      ↓
-Raw Data Storage
-      ↓
+GDELT Event Files
+        ↓
+ETL Worker
+        ↓
+Raw Local Storage / Azure Data Lake Bronze
+        ↓
 Normalization Pipeline
-      ↓
-Data Quality Checks
-      ↓
-Curated Event Tables
-      ↓
-Risk Scoring and Trend Detection
-      ↓
-API Layer
-      ↓
-Dashboard, Watchlists, Alerts, Observability
+        ↓
+Postgres Serving Tables
+        ↓
+FastAPI Event Query API
+        ↓
+Azure Data Lake Silver/Gold Outputs
+        ↓
+Snowflake Analytics Layer
 ```
 
 ---
 
-## System Components
-
-### 1. Ingestion Service
-
-The ingestion service is responsible for pulling GDELT data on a recurring schedule.
-
-**Responsibilities:**
-
-- Pull GDELT event data
-- Track processed time windows
-- Support retries
-- Handle failed runs
-- Store raw records
-- Maintain ingestion checkpoints
-- Record pipeline metadata
-
-**Key design requirement:**
-
-Ingestion must be idempotent. Reprocessing the same window should not create duplicate business records or corrupt downstream state.
-
-### 2. Raw Storage Layer
-
-Raw GDELT records are stored before transformation.
-
-**Purpose:**
-
-- Preserve source data
-- Support replay and reprocessing
-- Improve debugging
-- Maintain lineage
-- Separate ingestion from transformation
-
-**Example layout:**
+## Target Cloud Architecture
 
 ```text
-/raw/gdelt/events/year=2026/month=05/day=29/hour=14/
-/raw/gdelt/events/year=2026/month=05/day=29/hour=15/
+GitHub Repository
+        ↓
+GitHub Actions CI/CD
+        ↓
+Azure Container Registry
+        ↓
+Azure Container Apps
+        ├── FastAPI service
+        └── Scheduled ETL job
+                ↓
+Azure Data Lake Storage Gen2
+        ├── bronze/raw
+        ├── silver/normalized
+        └── gold/curated
+                ↓
+Snowflake
+        ├── external stage
+        ├── COPY INTO batch loads
+        └── optional Snowpipe auto-ingest
 ```
-
-### 3. Normalization Pipeline
-
-The normalization pipeline converts raw records into clean internal event models.
-
-**Responsibilities:**
-
-- Parse timestamps
-- Normalize country/location fields
-- Map raw event codes to internal categories
-- Extract actors and themes
-- Parse source URLs
-- Deduplicate records
-- Preserve lineage to raw source data
-
-**Example normalized event:**
-
-```json
-{
-  "event_id": "gdelt-20260529143000-123456",
-  "event_time": "2026-05-29T14:30:00Z",
-  "country_code": "FR",
-  "region": "Île-de-France",
-  "city": "Paris",
-  "latitude": 48.8566,
-  "longitude": 2.3522,
-  "event_category": "PROTEST",
-  "domain": "SUPPLY_CHAIN",
-  "themes": ["labor", "transport", "strike"],
-  "actors": ["transport workers", "labor union"],
-  "tone": -4.2,
-  "source_urls": ["https://example.com/article"],
-  "created_at": "2026-05-29T14:45:00Z"
-}
-```
-
-### 4. Data Quality Layer
-
-Data quality checks are stored as first-class records.
-
-**Example checks:**
-
-- Event ID must be unique
-- Event timestamp cannot be in the future
-- Latitude must be between -90 and 90
-- Longitude must be between -180 and 180
-- Country code must be valid when present
-- Source URL should be valid when present
-- Duplicate rate should remain within expected bounds
-- Null location rate should not spike unexpectedly
-- Latest processed GDELT window should stay fresh
-
-**Example quality result:**
-
-```text
-check_name: latest_window_freshness
-status: failed
-severity: high
-measured_value: 97 minutes
-expected_value: less than 30 minutes
-```
-
-### 5. Risk Scoring Layer
-
-The risk scoring layer identifies abnormal supply-chain-related activity.
-
-**Initial scoring factors:**
-
-- Recent event volume
-- Change from historical baseline
-- Event severity
-- Negative tone
-- Source diversity
-- Geographic relevance
-- Persistence across time windows
-
-**Example scoring model:**
-
-```text
-Risk Score =
-  30% volume spike score
-  20% event severity score
-  15% source diversity score
-  15% geographic relevance score
-  10% tone score
-  10% persistence score
-```
-
-Every score should include an explanation.
 
 ---
 
-## Notes
+## Storage Strategy
 
-SignalWatch is intended to be more than a simple dashboard. It is a platform that makes public event data actionable, explainable, and trustworthy for supply-chain risk operations.
-Risk Score: 74
-Severity: Medium
+SignalWatch uses separate storage layers for different responsibilities.
 
-Why this was flagged:
-- Protest-related transportation events are 3.2x above the 30-day baseline
-- Events are concentrated near major logistics regions
-- Multiple sources mention labor and transportation disruption
-- Average media tone is significantly negative
-API Design
+### Postgres
 
-Initial endpoints:
+Postgres is used for local and API-serving workloads.
 
-GET /health
-GET /pipeline/health
-GET /events
-GET /events/{event_id}
-GET /risk/hotspots
-GET /risk/timeseries
-GET /alerts
-POST /watchlists
-GET /watchlists
-GET /watchlists/{watchlist_id}
+Responsibilities:
 
-Example request:
+* Store `pipeline_runs`
+* Store `normalized_events`
+* Support FastAPI queries
+* Support pagination and filters
+* Support local development and validation
 
-GET /events?domain=supply_chain&country=FR&event_category=PROTEST&since=24h
+### Azure Data Lake Storage Gen2
 
-Example response:
+Azure Data Lake Storage Gen2 is the cloud system of record for dataset files.
 
-{
-  "count": 184,
-  "window": "24h",
-  "events": [],
-  "aggregates": {
-    "top_countries": ["FR", "DE", "BE"],
-    "top_themes": ["labor", "transport", "fuel"],
-    "average_tone": -3.8
-  },
-  "quality": {
-    "freshness_minutes": 18,
-    "deduplication_rate": 0.22,
-    "source_coverage": "normal"
-  }
-}
-Dashboard Concept
+Responsibilities:
 
-The dashboard should provide a clear operational view.
+* Store raw GDELT files
+* Store normalized event outputs
+* Store curated risk and analytics outputs
+* Support replayability and lineage
+* Provide a durable cloud data lake destination
 
-Recommended sections:
+Planned layout:
 
-Current supply-chain risk summary
-Regional event map
-Event volume trend
-Emerging topics
-Active alerts
-Source article drill-down
-Pipeline health
-Data quality status
-
-Example dashboard summary:
-
-Supply Chain Risk: Elevated
-
-Reason:
-Protest-related transport events in Western Europe are 3.4x above the 30-day baseline.
-
-Freshness:
-Last event window processed 17 minutes ago.
-
-Confidence:
-Medium. High event volume, moderate source diversity, and consistent negative tone.
-Proposed Tech Stack
-Local-First Version
-
-This version should be built first.
-
-Python
-FastAPI
-PostgreSQL
-DuckDB
-Docker Compose
-Prefect or Dagster
-SQLModel or SQLAlchemy
-Pytest
-Prometheus
-Grafana
-Streamlit or React
-GitHub Actions
-Cloud-Ready Version
-
-This version can be added after the local platform works.
-
-Azure Container Apps or AWS ECS
-Azure Data Lake Storage or AWS S3
-Databricks or Spark
-PostgreSQL
-Terraform
-GitHub Actions
-OpenTelemetry
-Grafana
-Cloud-native secrets management
-Suggested Repository Structure
+```text
 signalwatch/
+  bronze/
+    gdelt/
+      events/
+        year=YYYY/
+          month=MM/
+            day=DD/
+              hour=HH/
+                <gdelt-file>.CSV.zip
+
+  silver/
+    normalized_events/
+      year=YYYY/
+        month=MM/
+          day=DD/
+            normalized-events.parquet
+
+  gold/
+    analytics/
+      risk_scores/
+      event_trends/
+      supply_chain_hotspots/
+
+  checkpoints/
+    gdelt/
+      event_ingestion_checkpoint.json
+
+  quality/
+    data_quality_results/
+```
+
+### Snowflake
+
+Snowflake is an optional downstream analytics layer.
+
+Responsibilities:
+
+* Load curated Azure Data Lake outputs
+* Support analytical SQL queries
+* Validate warehouse ingestion patterns
+* Demonstrate Snowflake external stage usage
+* Demonstrate batch load and optional Snowpipe design
+
+Snowflake should not replace Azure Data Lake Storage or Postgres.
+
+Recommended role:
+
+```text
+Azure Data Lake Gen2 = durable cloud dataset destination
+Postgres = API serving and operational metadata
+Snowflake = analytics warehouse and reporting layer
+```
+
+---
+
+## Current Local Flow
+
+The current local flow is:
+
+```text
+Download GDELT file
+        ↓
+Save raw file locally
+        ↓
+Parse raw .CSV.zip file
+        ↓
+Normalize event records
+        ↓
+Persist normalized events to Postgres
+        ↓
+Track pipeline run metadata
+```
+
+This proves that SignalWatch can move from raw public data to queryable internal records.
+
+---
+
+## Repository Structure
+
+```text
+signalWatch/
   README.md
   docker-compose.yml
   pyproject.toml
+  .env.example
+
   .github/
     workflows/
       ci.yml
+      build-api.yml
+      build-etl.yml
+      deploy-azure.yml
 
   apps/
     api/
+      Dockerfile
       main.py
       routes/
-      models/
+        events.py
+        pipeline.py
+      schemas/
+        events.py
+        pipeline.py
       services/
+        event_service.py
+        pipeline_service.py
 
-    dashboard/
-      app.py
+  jobs/
+    etl/
+      Dockerfile
+      main.py
+      ingest/
+        gdelt_client.py
+        raw_writer.py
+        checkpoint_service.py
+      transform/
+        parse_gdelt_events.py
+        normalize_events.py
+        event_category_mapper.py
+        deduplicate.py
+      load/
+        normalized_event_repository.py
+        adls_writer.py
+        snowflake_loader.py
+      quality/
+        checks.py
+        result_writer.py
+      scoring/
+        risk_score.py
+        baselines.py
+        alerts.py
 
-  pipelines/
-    ingestion/
-      gdelt_client.py
-      ingest_events.py
-      checkpoints.py
-
-    transforms/
-      normalize_events.py
-      deduplicate.py
-      map_event_categories.py
-
-    quality/
-      checks.py
-      validators.py
-
-    scoring/
-      risk_score.py
-      baselines.py
-      alerts.py
+  packages/
+    signalwatch_common/
+      config.py
+      logging.py
+      enums.py
+      azure_clients.py
+      models/
+        normalized_event.py
+        pipeline_run.py
+        quality_result.py
 
   db/
+    schema/
+      pipeline_runs.sql
+      normalized_events.sql
+      data_quality_results.sql
+      alerts.sql
+      watchlists.sql
     migrations/
-    seed/
-    models.py
+    seeds/
 
   infra/
     terraform/
+      modules/
+        resource_group/
+        storage_account/
+        container_registry/
+        container_apps/
+        container_apps_job/
+        postgres/
+        key_vault/
+        log_analytics/
+      environments/
+        dev/
+        prod/
+
+  snowflake/
+    sql/
+      001_create_database.sql
+      002_create_storage_integration.sql
+      003_create_file_format.sql
+      004_create_external_stage.sql
+      005_create_tables.sql
+      006_copy_into_normalized_events.sql
+      007_create_views.sql
+    worksheets/
+      validation_queries.sql
+      supply_chain_analysis.sql
+    docs/
+      snowflake-setup.md
+      snowflake-load-runbook.md
 
   observability/
-    prometheus/
     grafana/
+      dashboards/
+    prometheus/
+    log_queries/
+
+  docs/
+    architecture.md
+    azure-deployment.md
+    data-model.md
+    etl-flow.md
+    operations-runbook.md
+    evaluation.md
+    limitations.md
+    milestones/
 
   tests/
     unit/
     integration/
+    contract/
+```
 
-  docs/
-    architecture.md
-    data-model.md
-    evaluation.md
-    limitations.md
+---
+
+## Milestone Roadmap
+
+## Milestone 1: Local Runtime Foundation
+
+### Objective
+
+Create a clean local development foundation that supports the API, database, tests, and CI validation.
+
+### Completed Scope
+
+* Created project skeleton
+* Added Docker Compose
+* Added local Postgres
+* Added FastAPI health endpoint
+* Added test framework
+* Added linting and formatting
+* Added GitHub Actions CI validation
+* Added basic Docker build validation
+
+### Status
+
+Complete.
+
+---
+
+## Milestone 2: GDELT Raw Ingestion Workflow
+
+### Objective
+
+Download a GDELT event file and store it locally as a raw source artifact.
+
+### Completed Scope
+
+* Added GDELT ingestion client
+* Added local raw file writer
+* Added ETL CLI entrypoint
+* Downloaded a raw GDELT file locally
+* Validated that the file lands on the local machine
+* Added pipeline run tracking for ingestion attempts
+
+### Status
+
+Complete.
+
+---
+
+## Milestone 3: Normalize and Persist GDELT Events
+
+### Objective
+
+Parse a downloaded GDELT `.CSV.zip` file, normalize the rows into the internal event schema, and persist normalized records to Postgres.
+
+### Completed Scope
+
+* Parsed raw GDELT event files
+* Normalized rows into internal event objects
+* Applied initial event field mapping
+* Added event category mapping
+* Added basic supply-chain relevance logic
+* Added `normalized_events` persistence
+* Inserted normalized rows into Postgres
+* Preserved source lineage fields
+* Updated pipeline run metadata
+
+### Status
+
+Complete.
+
+### Completion Evidence
+
+Recommended evidence location:
+
+```text
+docs/milestones/milestone-03-normalization.md
+docs/evidence/milestone-03-normalization-console.txt
+```
+
+Recommended validation evidence:
+
+```text
+- Raw file exists locally
+- Normalize command runs successfully
+- Records are persisted to normalized_events
+- pipeline_runs records read/write/failure counts
+- Duplicate-safe rerun behavior is validated
+- Tests pass locally and in GitHub Actions
+```
+
+---
+
+## Milestone 4: Event Query API
+
+### Objective
+
+Expose persisted normalized events through FastAPI.
+
+### Scope
+
+* Add `GET /events`
+* Add `GET /events/{event_id}`
+* Add `GET /pipeline/health`
+* Support pagination
+* Support filters by country, event category, domain, supply-chain relevance, and time window
+* Add API response schemas
+* Add event service layer
+* Add pipeline health service
+* Add API integration tests
+
+### Deliverables
+
+* Queryable event API
+* Event detail endpoint
+* Pipeline health endpoint
+* API test coverage
+* README usage examples
+
+### Success Criteria
+
+```text
+- GET /events returns persisted normalized_events rows
+- GET /events supports pagination
+- GET /events supports basic filters
+- GET /events/{event_id} returns one event by UUID
+- Unknown event IDs return 404
+- GET /pipeline/health returns latest pipeline status
+- Tests pass locally
+- GitHub Actions passes
+```
+
+---
+
+## Milestone 5: Azure Data Lake Storage Integration
+
+### Objective
+
+Move dataset storage from local-only files to Azure Data Lake Storage Gen2.
+
+### Scope
+
+* Provision Azure Storage Account with hierarchical namespace enabled
+* Create ADLS container and folder structure
+* Add Azure Data Lake writer
+* Write raw GDELT files to bronze storage
+* Write normalized event outputs to silver storage
+* Add cloud-compatible checkpoint location
+* Preserve local writer as a development option
+* Add configuration switch for local versus Azure storage
+
+### Deliverables
+
+* ADLS-backed raw storage
+* ADLS-backed normalized output
+* Azure storage client integration
+* Documented data lake layout
+* Azure deployment notes
+
+### Success Criteria
+
+```text
+- ETL can write raw files to ADLS bronze
+- ETL can write normalized outputs to ADLS silver
+- Local mode still works
+- Storage destination is configurable
+- Credentials are not hardcoded
+```
+
+---
+
+## Milestone 6: Azure ETL Runtime
+
+### Objective
+
+Run the ETL workflow as a scheduled Azure workload.
+
+### Scope
+
+* Containerize the ETL worker
+* Push ETL image to Azure Container Registry
+* Deploy ETL as an Azure Container Apps Job
+* Configure recurring schedule
+* Configure managed identity or secure credential access
+* Connect ETL job to ADLS
+* Connect ETL job to Postgres
+* Add logs for each cloud run
+
+### Deliverables
+
+* ETL Docker image
+* Azure Container Registry repository
+* Scheduled Azure Container Apps Job
+* Cloud ETL run logs
+* Cloud ETL run documentation
+
+### Success Criteria
+
+```text
+- ETL runs from Azure
+- ETL writes to ADLS
+- ETL updates pipeline metadata
+- ETL can be run manually
+- ETL can run on a schedule
+```
+
+---
+
+## Milestone 7: GitHub Actions to Azure CI/CD
+
+### Objective
+
+Deploy application and ETL changes to Azure using GitHub Actions.
+
+### Scope
+
+* Add GitHub Actions workflow for Azure login
+* Use OpenID Connect authentication
+* Build API Docker image
+* Build ETL Docker image
+* Push images to Azure Container Registry
+* Deploy or update Azure Container App
+* Deploy or update Azure Container Apps Job
+* Add environment-specific workflow configuration
+
+### Deliverables
+
+* GitHub Actions Azure deployment workflow
+* ACR image publishing
+* API deployment workflow
+* ETL job deployment workflow
+* Documented CI/CD process
+
+### Success Criteria
+
+```text
+- Pull requests run lint and tests
+- Merges to main build container images
+- Images are pushed to Azure Container Registry
+- Azure workloads are updated from GitHub Actions
+- No long-lived Azure credentials are stored in the repository
+```
+
+---
+
+## Milestone 8: Snowflake Batch Load Integration
+
+### Objective
+
+Load curated SignalWatch outputs from Azure Data Lake Storage into Snowflake for analytical querying.
+
+### Scope
+
+* Create Snowflake database and schema
+* Create Snowflake warehouse
+* Create Azure storage integration
+* Create external stage over ADLS gold or silver path
+* Create file format
+* Create Snowflake tables
+* Add batch `COPY INTO` load scripts
+* Add validation queries
+* Document Snowflake setup
+
+### Deliverables
+
+* Snowflake setup SQL
+* External stage definition
+* `COPY INTO` load script
+* Snowflake `NORMALIZED_EVENTS` table
+* Validation worksheet
+* Snowflake load runbook
+
+### Success Criteria
+
+```text
+- Snowflake can access the configured Azure storage path
+- Curated files can be loaded into Snowflake
+- Loaded row counts can be reconciled against ADLS/Postgres
+- Validation queries return expected results
+- Setup is documented
+```
+
+---
+
+## Milestone 9: Snowflake Analytics Views
+
+### Objective
+
+Create Snowflake analytical views that demonstrate warehouse-level querying.
+
+### Scope
+
+* Create supply-chain event trend view
+* Create country/category aggregation view
+* Create high-risk event view
+* Create source coverage view
+* Create pipeline load audit view
+* Add example analytical SQL queries
+
+### Deliverables
+
+* Snowflake views
+* Analytical worksheets
+* Example query results
+* Documentation showing how Snowflake adds value beyond the API
+
+### Success Criteria
+
+```text
+- Snowflake can answer aggregate analytical questions
+- Views are documented
+- Example queries support portfolio/demo storytelling
+```
+
+---
+
+## Milestone 10: Optional Snowpipe Auto-Ingest
+
+### Objective
+
+Automate continuous loading from Azure storage into Snowflake.
+
+### Scope
+
+* Configure Azure Event Grid integration
+* Create Snowflake notification integration
+* Create Snowpipe pipe
+* Enable auto-ingest
+* Add load monitoring queries
+* Add error handling documentation
+
+### Deliverables
+
+* Snowpipe setup SQL
+* Event Grid integration notes
+* Auto-ingest pipe
+* Snowpipe monitoring queries
+* Snowpipe troubleshooting notes
+
+### Success Criteria
+
+```text
+- New eligible files in Azure trigger Snowflake ingestion
+- Snowpipe load history shows successful file loads
+- Failed loads can be diagnosed
+- Auto-ingest behavior is documented
+```
+
+---
+
+## Milestone 11: Risk Scoring and Data Quality
+
+### Objective
+
+Add analytical intelligence and trust signals to the platform.
+
+### Scope
+
+* Create rolling event baselines
+* Detect event volume spikes
+* Implement simple risk scoring
+* Store risk score history
+* Add data quality checks
+* Track freshness
+* Track duplicate rates
+* Track null location rates
+* Track unmapped category rates
+* Expose quality results through API
+
+### Deliverables
+
+* Risk scoring job
+* Risk score table
+* Data quality results table
+* Data quality API response
+* Freshness checks
+* Duplicate-rate checks
+* Tests for scoring and validation rules
+
+### Success Criteria
+
+```text
+- System can detect abnormal event activity
+- Risk scores include explanation fields
+- Data quality checks are stored
+- Data freshness is visible
+- Quality checks can fail without silently corrupting the pipeline
+```
+
+---
+
+## Milestone 12: Observability and Dashboard
+
+### Objective
+
+Make the platform easy to monitor and demo.
+
+### Scope
+
+* Add structured logging
+* Add service metrics
+* Add API latency metrics
+* Add ingestion metrics
+* Add pipeline failure metrics
+* Add Grafana dashboard
+* Add dashboard UI for event trends and alerts
+* Add operational runbook
+
+### Deliverables
+
+* Observability dashboard
+* User-facing dashboard
+* Pipeline health panel
+* Event trend visualization
+* Alert/risk summary view
+* Runbook documentation
+
+### Success Criteria
+
+```text
+- System health can be assessed without manually reading raw logs
+- Event trends are visible in a dashboard
+- Pipeline freshness is visible
+- Demo flow is clear and repeatable
+```
+
+---
+
+## Snowflake Integration Design
+
+Snowflake is intentionally downstream from Azure Data Lake Storage.
+
+Recommended data flow:
+
+```text
+ETL writes curated files to ADLS
+        ↓
+Snowflake external stage points to ADLS path
+        ↓
+COPY INTO loads files into Snowflake tables
+        ↓
+Snowflake views expose analytical summaries
+        ↓
+Optional Snowpipe automates continuous loading later
+```
+
+Initial Snowflake objects:
+
+```text
+Database:
+  SIGNALWATCH
+
+Schemas:
+  RAW
+  CURATED
+  ANALYTICS
+  AUDIT
+
+Tables:
+  CURATED.NORMALIZED_EVENTS
+  AUDIT.LOAD_HISTORY
+  AUDIT.PIPELINE_RUNS
+
+Views:
+  ANALYTICS.SUPPLY_CHAIN_EVENT_TRENDS
+  ANALYTICS.EVENTS_BY_COUNTRY
+  ANALYTICS.HIGH_RISK_EVENTS
+  ANALYTICS.SOURCE_COVERAGE
+```
+
+Snowflake should answer questions like:
+
+```text
+- Which countries have the highest supply-chain-related event volume?
+- Which event categories are increasing over time?
+- How many events were loaded by batch?
+- Are Snowflake row counts reconciled with Azure and Postgres?
+- Which sources or regions show abnormal coverage patterns?
+```
+
+---
+
+## CI/CD Strategy
+
+GitHub Actions is responsible for validation and deployment.
+
+Pull request workflow:
+
+```text
+- install dependencies
+- run lint checks
+- run formatting check
+- run unit tests
+- run integration tests where available
+- validate Docker builds
+```
+
+Main branch workflow:
+
+```text
+- build API image
+- build ETL image
+- push images to Azure Container Registry
+- deploy FastAPI app to Azure Container Apps
+- deploy scheduled ETL job to Azure Container Apps Jobs
+```
+
+Snowflake deployment workflow, later:
+
+```text
+- validate SQL scripts
+- apply Snowflake setup scripts manually at first
+- automate Snowflake object deployment only after the SQL stabilizes
+```
+
+Recommended rule:
+
+```text
+Automate Azure deployment first.
+Keep Snowflake setup script-based until the warehouse model stabilizes.
+```
+
+---
+
+## Local Development Commands
+
+Start local dependencies:
+
+```bash
+docker compose up -d
+```
+
+Run API:
+
+```bash
+uvicorn apps.api.main:app --reload
+```
+
+Run tests:
+
+```bash
+pytest
+```
+
+Run raw ingestion:
+
+```bash
+python -m jobs.etl.main ingest --window latest
+```
+
+Run normalization:
+
+```bash
+python -m jobs.etl.main normalize --raw-file <path-to-gdelt-csv-zip>
+```
+
+Run full local ETL, once available:
+
+```bash
+python -m jobs.etl.main run-all --window latest
+```
+
+---
+
+## API Roadmap
+
+Initial API endpoints:
+
+```http
+GET /health
+GET /events
+GET /events/{event_id}
+GET /pipeline/health
+```
+
+Future API endpoints:
+
+```http
+GET /risk/hotspots
+GET /risk/timeseries
+GET /quality/status
+GET /alerts
+POST /watchlists
+GET /watchlists
+GET /watchlists/{watchlist_id}
+```
+
+---
+
+## Data Model Direction
+
+Current core tables:
+
+```text
+pipeline_runs
+normalized_events
+```
+
+Near-term tables:
+
+```text
+data_quality_results
+risk_scores
+alerts
+watchlists
+```
+
+Snowflake tables:
+
+```text
+CURATED.NORMALIZED_EVENTS
+AUDIT.PIPELINE_RUNS
+AUDIT.LOAD_HISTORY
+ANALYTICS views
+```
+
+Important design principle:
+
+```text
+Postgres supports the application.
+Azure Data Lake stores the dataset.
+Snowflake supports analytical querying.
+```
+
+---
+
+## Known Limitations
+
+SignalWatch should not treat GDELT as perfect ground truth.
+
+Important limitations:
+
+* GDELT reflects media/event signals, not verified incident counts
+* News coverage varies by geography, language, and source availability
+* Event classification may be imperfect
+* Duplicate or near-duplicate events may appear
+* Some records may lack precise location data
+* Tone does not always equal operational severity
+* High media coverage does not always mean high operational risk
+* Low media coverage does not always mean low operational risk
+
+The platform should expose data quality, freshness, lineage, and confidence signals rather than pretending the dataset is perfect.
+
+---
+
+## Portfolio Positioning
+
+SignalWatch demonstrates the ability to build a cloud-ready data platform around messy, frequently updated public data.
+
+Strong project description:
+
+> Built a GDELT-powered event intelligence platform that ingests raw global event files, normalizes records into a stable internal schema, persists queryable events to Postgres, prepares curated outputs for Azure Data Lake Storage Gen2, and integrates Snowflake as a downstream analytics warehouse.
+
+Resume-ready bullets:
+
+* Built a Python/FastAPI data platform that ingests GDELT global event files, normalizes raw event records, and persists queryable results to Postgres.
+* Designed a cloud-ready ETL architecture targeting Azure Data Lake Storage Gen2 with bronze, silver, and gold dataset layers.
+* Added pipeline metadata tracking, source lineage, and duplicate-safe persistence for normalized event records.
+* Planned Snowflake integration using Azure external stages, batch `COPY INTO` loads, audit tables, and analytical views.
+* Designed CI/CD workflow using GitHub Actions, container builds, Azure deployment targets, and secure cloud authentication patterns.
