@@ -361,9 +361,7 @@ def smoke_adls(
     raw_writer = raw_writer or build_raw_writer(backend)
     silver_writer = silver_writer or build_raw_writer(backend)
     execution_name = _job_execution_name()
-    bronze_destination = Path(
-        f"bronze/_smoke_tests/job_execution={execution_name}/bronze-test.txt"
-    )
+    bronze_destination = Path(f"bronze/_smoke_tests/job_execution={execution_name}/bronze-test.txt")
     silver_destination = Path(
         f"silver/_smoke_tests/job_execution={execution_name}/silver-test.jsonl"
     )
@@ -374,8 +372,7 @@ def smoke_adls(
             bronze_destination.as_posix(),
         )
         silver_path = silver_writer.write(
-            json.dumps({"status": "ok", "job_execution": execution_name}).encode("utf-8")
-            + b"\n",
+            json.dumps({"status": "ok", "job_execution": execution_name}).encode("utf-8") + b"\n",
             silver_destination.as_posix(),
         )
     except Exception as error:

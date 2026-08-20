@@ -251,9 +251,7 @@ def test_run_all_marks_duplicate_window_skipped(tmp_path, monkeypatch, capsys) -
     assert "Storage backend: local" in output
 
 
-def test_run_all_force_bypasses_duplicate_window_checkpoint(
-    tmp_path, monkeypatch, capsys
-) -> None:
+def test_run_all_force_bypasses_duplicate_window_checkpoint(tmp_path, monkeypatch, capsys) -> None:
     checkpoint = FakeCheckpoint()
     checkpoint.can_process_window = lambda *args: False
     writer = FakeWriter()
@@ -313,9 +311,7 @@ def test_run_all_database_writes_disabled_skips_postgres_services(
     assert "Records written to ADLS silver: 1" in output
 
 
-def test_smoke_adls_writes_unique_bronze_and_silver_paths(
-    tmp_path, monkeypatch, capsys
-) -> None:
+def test_smoke_adls_writes_unique_bronze_and_silver_paths(tmp_path, monkeypatch, capsys) -> None:
     writer = FakeWriter()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CONTAINER_APP_JOB_EXECUTION_NAME", "job-signalwatch-etl-dev-abc123")
@@ -336,8 +332,7 @@ def test_smoke_adls_writes_unique_bronze_and_silver_paths(
     assert "Database writes: disabled" in output
     assert (
         "Bronze smoke path: "
-        "bronze/_smoke_tests/job_execution=job-signalwatch-etl-dev-abc123/bronze-test.txt"
-        in output
+        "bronze/_smoke_tests/job_execution=job-signalwatch-etl-dev-abc123/bronze-test.txt" in output
     )
     assert (
         "Silver smoke path: "
