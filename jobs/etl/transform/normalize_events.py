@@ -149,9 +149,7 @@ def normalize_gdelt_event(
         article_count=_to_int(_value(row, "NumArticles")),
         is_supply_chain_related=is_supply_chain_related,
         confidence_score=(
-            SUPPLY_CHAIN_CONFIDENCE_SCORE
-            if is_supply_chain_related
-            else DEFAULT_CONFIDENCE_SCORE
+            SUPPLY_CHAIN_CONFIDENCE_SCORE if is_supply_chain_related else DEFAULT_CONFIDENCE_SCORE
         ),
         pipeline_run_id=pipeline_run_id,
         normalized_at=normalized_at,
